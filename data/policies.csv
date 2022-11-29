@@ -1,0 +1,7 @@
+Title,Description,Affected Variable,Affect Type,Delta
+Half Streamflow,Half the amount of streamflow going to the Great Salt Lake,streamflow_after_consumption,proportion,0.5
+Double Streamflow,Double the amount of streamflow going towards the Great Salt Lake before humans,streamflow_before_consumption,proportion,2
+No humans,Sets consumptive water use to zero,total_consumptive_use,proportion,0
+Less humans,Sets consumptive water use to zero,total_consumptive_use,proportion,0.5
+Double the Rain,Doubles the amount of rain falling directly on the lake,percip,proportion,2
+Double the Water Consumption,Doubles the amount of water people use,total_consumptive_use,proportion,2

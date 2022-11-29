@@ -1,0 +1,15 @@
+Metadata-Version: 2.1
+Name: dataretrieval
+Version: 0.7
+Summary: UNKNOWN
+Home-page: UNKNOWN
+Author: Timothy Hodson
+Author-email: thodson@usgs.gov
+License: CC0
+Platform: UNKNOWN
+Requires-Dist: pandas
+Requires-Dist: requests
+
+UNKNOWN
+
+
