@@ -72,7 +72,7 @@ def LoadMonthlyStats(path: str) -> pd.DataFrame:
 
 def AdjustMonthlyStats(policies: list[Policy], monthly_stats: pd.DataFrame) -> pd.DataFrame:
     '''
-    Adjusts the monthly streamflow by the given policies
+    Adjusts the monthly variables by the given policies
     '''
     adjusted_monthly = monthly_stats.copy(deep=True)  
 
@@ -181,10 +181,10 @@ def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
         if weather:
             if lr_weather_counter == 0:
                 lr_weather_counter = np.random.randint(60,120)
-                lr_weather_factor = np.random.normal(scale=0.2)
+                lr_weather_factor = np.random.normal(scale=0.15)
                 
             if month_index == 0:
-                weather_factor = np.random.normal(scale=0.5)
+                weather_factor = np.random.normal(scale=0.35)
             
             lr_weather_counter -= 1
             
@@ -228,9 +228,9 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
                         },
                     )
 
-    # start_date = "1950-01-01"
-    # end_date = combined.at[len(combined)-1, "datetime"]
-    # fig.update_xaxes(type='date', range=[start_date, end_date])
+    start_date = "1870-01-01"
+    end_date = combined.at[len(combined)-1, "datetime"]
+    fig.update_xaxes(type='date', range=[start_date, end_date])
 
     #only show trendlines
     fig.data = [t for t in fig.data if t.mode == 'lines']
@@ -306,50 +306,201 @@ app = Dash(__name__)
 
 
 app.layout = html.Div([
-    dcc.Checklist(
-        id='policy-checklist',
-        options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies],
-        value=[],
-        labelStyle={
-            'display': 'block',
-            'text-indent': '-1.25em'
-        },
-        style={
-            'position':'relative',
-            'left': '1em'
-        }
+    html.Div(id='policy-selector',
+    children=[
+        html.H2('Policy Options'),
+        # dcc.Checklist(id='water-buybacks',
+        #     options = [{
+        #         'label': html.Span(children=[
+        #             html.Strong('Water Rights buyback'), 
+        #             html.Br() ,
+        #             '',
+        #             html.Br()
+        #             ]), 
+        #         'value': True
+        #         }],
+        #     value= [],
+        #     labelStyle={
+        #         'display': 'block',
+        #         'text-indent': '-1.25em'
+        #     },
+        #     style={
+        #         'position':'relative',
+        #         'left': '1em'
+        #     }
+        # ),
+        dcc.Checklist(id='policy-checklist',
+            options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies],
+            value=[],
+            labelStyle={
+                'display': 'block',
+                'text-indent': '-1.25em'
+            },
+            style={
+                'position':'relative',
+                'left': '1em'
+            }
         ),
-    html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
-    html.H2('Graph of predicted elevation'),
-    dcc.Graph(
-        id='output-graph'
+        dcc.Checklist(id='weather-checklist',
+            options = [{
+                'label': html.Span(children=[
+                    html.Strong('Cosmetic Weather'), 
+                    html.Br() ,
+                    'Activate RANDOMLY generated weather. Does not change predicted long term average.',
+                    html.Br()
+                    ]), 
+                'value': True
+                }],
+            value = [],
+            labelStyle={
+                'display': 'block',
+                'text-indent': '-1.25em'
+            },
+            style={
+                'position':'relative',
+                'left': '1em'
+            }
+        ),
+    ]),
+    html.Div(id='sliders',
+        children=[
+            html.H2('Enviromental Sliders'),
+            html.Strong('Adjust direct rainfall'),
+            dcc.Slider(
+                id = 'rain-slider',
+                min = -100,
+                max = 100,
+                value = 0,
+                marks = {
+                    -100: '100% less rain (No rain)',
+                    -50: '50% less rain',
+                    0: 'No change',
+                    50: '50% more rain',
+                    100: '100% more rain (Double rain)',
+                },
+                tooltip={
+                    'placement':'bottom'
+                }
+            ),
+            html.Strong('Adjust human water consumption'),
+            dcc.Slider(
+                id = 'human-consumption-slider',
+                min = -100,
+                max = 100,
+                value = 0,
+                marks = {
+                    -100: '100% less consumption (No humans)',
+                    -50: '50% less consumption',
+                    0: 'No change',
+                    50: '50% more consumption',
+                    100: '100% more rain (Double consumption)',
+                },
+                tooltip={
+                    'placement':'bottom'
+                }
+            ),
+            html.Strong('Adjust pre-consumption streamflow'),
+            dcc.Slider(
+                id = 'streamflow-slider',
+                min = -100,
+                max = 100,
+                value = 0,
+                marks = {
+                    -100: '100% less streamflow (No streamflow)',
+                    -50: '50% less streamflow',
+                    0: 'No change',
+                    50: '50% more streamflow',
+                    100: '100% more rain (Double streamflow)',
+                },
+                tooltip={
+                    'placement':'bottom'
+                }
+            ),
+            html.Strong('How many years in the future to predict'),
+            dcc.Slider(
+                id = 'years-forward-slider',
+                min = 20,
+                max = 100,
+                value = 20,
+                step = 1,
+                marks = {
+                    20: '20 years forward',
+                    40: '40 years forward',
+                    60: '60 years forward',
+                    80: '80 years forward',
+                    100: '100 years forward'
+                },
+                tooltip={
+                    'placement':'bottom'
+                }
+            ),
+
+        ]
     ),
-    html.H2('Predicted surface area'),
-    html.Div(id='lake-predicted-image'),
+
+    html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
+    html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection'),
+
+    html.Div(id='line-graph',
+        children=[
+            html.H2('Graph of predicted elevation'),
+            dcc.Graph(id='output-graph'),
+        ]
+    ),
+
+    html.Div(id='predicted-image',
+        children = [
+            html.H2('Predicted surface area'),
+            html.Div(id='lake-predicted-image')
+        ]
+    ),
     html.H2('Predicted effects based on policy choices:'),
 
 ])
+
 @app.callback(
     Output('output-graph','figure'),
     Output('lake-predicted-image','children'),
     Input('run-model-button', 'n_clicks'),
-    State('policy-checklist','value')
+    State('policy-checklist','value'),
+    State('rain-slider','value'),
+    State('human-consumption-slider','value'),
+    State('years-forward-slider','value'),
+    State('streamflow-slider','value'),
+    State('weather-checklist','value')
 )
-def modeling(_: int, selected_policies) -> list[str]:
-    weather=False
+def modeling(_: int, selected_policies: list[str], 
+    rain_delta: int, consumption_delta: int, years_forward: int,
+    streamflow_delta: int,  weather: list[bool]) -> list[str]:
+
+    if len(weather) > 0:
+        weather = True
+    else:
+        weather = False
+
     applied_policies = []
     for policy in Policy.all_policies:
         if policy.title in selected_policies:
             applied_policies.append(policy)
 
+    rain_delta = (rain_delta+100) / 100
+    applied_policies.append(Policy('rain-slider','n/a',DataSchema.percip,'proportion',delta=rain_delta))
+
+    consumption_delta = (consumption_delta + 100) / 100
+    applied_policies.append(Policy('consumption-slider','n/a',DataSchema.total_consumptive_use,'proportion',delta=consumption_delta))
+
+    streamflow_delta = (streamflow_delta + 100) / 100
+    applied_policies.append(Policy('streamflow-slider','n/a',DataSchema.streamflow_before_consumption,'proportion',delta=streamflow_delta))
+
     adjusted_monthly_stats = AdjustMonthlyStats(applied_policies, monthly_stats)
-    prediction = GSLPredictor(20, adjusted_monthly_stats, bath, lake)
+    prediction = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
 
     MONTHS_BEFORE_LONG_RUN_AVG = 108
     if not weather:
         lr_average_elevation = round(prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
     else:
-        pass
+        lr_avg_prediction = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
+        lr_average_elevation = round(lr_avg_prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
 
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake)
 
@@ -358,8 +509,18 @@ def modeling(_: int, selected_policies) -> list[str]:
     lake_picture = html.Img(src=image_path)
 
     return line_graph, lake_picture
-    
-    # return px.scatter(prediction, x='datetime', y='Elevation Prediction')
+
+@app.callback(
+    Output('policy-checklist','value'),
+    Output('rain-slider','value'),
+    Output('human-consumption-slider','value'),
+    Output('years-forward-slider','value'),
+    Output('streamflow-slider','value'),
+    Output('weather-checklist','value'),
+    Input('reset-model-button', 'n_clicks')
+)
+def ResetButton(_:int):
+    return [], 0, 0, 20, 0, []
 
 if __name__ == '__main__':
     app.run_server(debug=True)
