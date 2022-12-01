@@ -7,6 +7,7 @@ from datetime import date
 import numpy as np
 from dateutil.relativedelta import relativedelta
 import plotly.express as px
+from dash_extensions import BeforeAfter
 
 class DataSchema:
     streamflow_after_consumption = 'streamflow_after_consumption'
@@ -98,15 +99,15 @@ def GetUSGSSiteData(site_num: str, start_date: str, end_date: str, service='dv')
     df.reset_index(inplace=True)
     return df
 
-def YearMonth(row):
-    '''
-    Function used for adding YYYY-MM column to lake dataframe. Really, not a great function 
-    '''
-    month_string = str(row['datetime'].month)
-    if len(month_string) == 1:
-        month_string = '0' + month_string
+# def YearMonth(row):
+#     '''
+#     Function used for adding YYYY-MM column to lake dataframe. Really, not a great function 
+#     '''
+#     month_string = str(row['datetime'].month)
+#     if len(month_string) == 1:
+#         month_string = '0' + month_string
         
-    return str(row['datetime'].year)+ '-' + month_string
+#     return str(row['datetime'].year)+ '-' + month_string
 
 def LoadBathData(path: str) -> pd.DataFrame:
     return pd.read_csv(path, index_col=0)
@@ -209,6 +210,8 @@ def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
 
 def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lake: pd.DataFrame, rolling=60) -> px.scatter:
 
+    MEAN_ELEVATION_WITHOUT_HUMANS = 1282.3
+
     combined = pd.concat([df_lake,prediction],ignore_index=True)
 
     temp = pd.concat([combined.iloc[len(df_lake)-rolling:len(df_lake)]['Elevation'],combined.iloc[len(df_lake):]['Elevation Prediction']])
@@ -236,7 +239,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
     fig.data = [t for t in fig.data if t.mode == 'lines']
 
     #assign label positions
-    if (0 < (1282.3 - lr_average_elevaton) < 0.4) or (0 < (df_lake['Elevation'].mean() - lr_average_elevaton) < 0.4):
+    if (0 < (MEAN_ELEVATION_WITHOUT_HUMANS - lr_average_elevaton) < 0.4) or (0 < (df_lake['Elevation'].mean() - lr_average_elevaton) < 0.4):
         lr_pos = 'bottom left'
         human_pos = 'top left'
     elif 0 < (lr_average_elevaton - df_lake['Elevation'].mean()) < 0.4:
@@ -246,8 +249,8 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
         lr_pos = 'top left'
         human_pos = 'top left'
 
-    fig.add_hline(y=1282.3, line_dash='dot',
-                    annotation_text = 'Average Natural Level, 1282.3m',
+    fig.add_hline(y=MEAN_ELEVATION_WITHOUT_HUMANS, line_dash='dot',
+                    annotation_text = f'Average Natural Level, {MEAN_ELEVATION_WITHOUT_HUMANS}m',
                     annotation_position = 'top left',
                     annotation_font_size = 10,
                     annotation_font_color = 'black',
@@ -273,10 +276,17 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
     return fig
 
 def WrittenEffects(lr_average_elevation: float, df_lake: pd.DataFrame, bath_df: pd.DataFrame) -> html.Div:
-    delta_elevation = round(df_lake['Elevation'].mean() - lr_average_elevation, 2)
-    delta_surface_area = round(df_lake['Surface Area'].mean() - bath_df.at[lr_average_elevation, 'Surface Area'], 2)
-    delta_volume = round(df_lake['Volume'].mean() - bath_df.at[lr_average_elevation, 'Volume'], )
-    if delta_elevation >= 0:
+    NATURAL_ELEVATION_MEAN = 1282.30
+    NATURAL_SA_MEAN = bath_df.at[NATURAL_ELEVATION_MEAN, 'Surface Area']
+    NATURAL_VOLUME_MEAN = bath_df[NATURAL_ELEVATION_MEAN, 'Volume']
+    HUMAN_ELEVATION_MEAN = round(df_lake['Elevation'].mean(), 2)
+
+    delta_elevation_percent = 100 * ((lr_average_elevation - NATURAL_ELEVATION_MEAN) / NATURAL_ELEVATION_MEAN)
+    delta_sa_percent = 100 * ((bath_df.at[lr_average_elevation, 'Surface Area'] - NATURAL_SA_MEAN) / NATURAL_SA_MEAN)
+    delta_volume_percent = 100 * ((bath_df.at[lr_average_elevation, 'Volume'] - NATURAL_VOLUME_MEAN) / NATURAL_VOLUME_MEAN)
+
+
+    if delta_elevation_percent >= 0:
         color = 'green'
         elevation_descriptor = 'higher'
         volume_descriptor = 'more'
@@ -289,12 +299,24 @@ def WrittenEffects(lr_average_elevation: float, df_lake: pd.DataFrame, bath_df: 
         id = 'written-effects',
         children=[
             html.H3('Based on the selected policy choices, in the long term, the lake will be:'),
-            html.Br(),
             html.Ul([
-                html.Li(f'',style={'color':color})
+                html.Li(f'fds',style={'color':color})
             ])
         ]
     )
+
+def BuyBackEffect(millions_spent: int) -> float:
+    '''
+    This function takes the amount of money spent on water rights buy backs and calculates the total amount of water saving it would create, in km3/yr
+    '''
+    pass
+
+def RetrieveImage(lr_average_elevation: float) -> html.Img:
+    closest_half_meter = round(lr_average_elevation * 2) / 2
+    image_path = f'/assets/gsl_{closest_half_meter}.png'
+    return html.Img(src=image_path)
+
+
 
 Policy.instantiate_from_csv('data/policies.csv')
 monthly_stats = LoadMonthlyStats('data/monthly_stats.csv')
@@ -306,29 +328,52 @@ app = Dash(__name__)
 
 
 app.layout = html.Div([
+    html.Div(id='before-after-parent',children=[
+        BeforeAfter(before={'src':'assets/gsl_before.jpg'}, after={'src':'assets/gsl_after.jpg'}, hover=False, id='before-after-image'),
+        html.I('Click and drag to see differences in water level from 1986 to 2022')
+    ]),
     html.Div(id='policy-selector',
     children=[
         html.H2('Policy Options'),
-        # dcc.Checklist(id='water-buybacks',
-        #     options = [{
-        #         'label': html.Span(children=[
-        #             html.Strong('Water Rights buyback'), 
-        #             html.Br() ,
-        #             '',
-        #             html.Br()
-        #             ]), 
-        #         'value': True
-        #         }],
-        #     value= [],
-        #     labelStyle={
-        #         'display': 'block',
-        #         'text-indent': '-1.25em'
-        #     },
-        #     style={
-        #         'position':'relative',
-        #         'left': '1em'
-        #     }
-        # ),
+        dcc.Checklist(id='water-buybacks',
+            options = [{
+                'label': html.Span(children=[
+                    html.Strong('Water Rights buyback'), 
+                    html.Br() ,
+                    'Instutute water buybacks program as described here',
+                    html.Br()
+                    ]), 
+                'value': True
+                }],
+            value = [],
+            labelStyle={
+                'display': 'block',
+                'text-indent': '-1.25em'
+            },
+            style={
+                'position':'relative',
+                'left': '1em'
+            }
+        ),
+        html.Span(id='buyback-slider-display',
+            children = [
+                dcc.Slider(
+                        id = 'buyback-slider',
+                        min = 0,
+                        max = 100,
+                        value = 50,
+                        marks = {
+                            0: '$0',
+                            50: '$50 million',
+                            100: {'label':'$100 million', 'style':{'right':'-200px'}}
+                        },
+                        tooltip={
+                            'placement':'bottom'
+                        }
+                ),
+            ],
+            style = {'display': 'none'}
+        ),
         dcc.Checklist(id='policy-checklist',
             options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies],
             value=[],
@@ -376,7 +421,7 @@ app.layout = html.Div([
                     -50: '50% less rain',
                     0: 'No change',
                     50: '50% more rain',
-                    100: '100% more rain (Double rain)',
+                    100: {'label':'100% more rain (Double rain)', 'style':{'right':'-200px'}}
                 },
                 tooltip={
                     'placement':'bottom'
@@ -393,7 +438,7 @@ app.layout = html.Div([
                     -50: '50% less consumption',
                     0: 'No change',
                     50: '50% more consumption',
-                    100: '100% more rain (Double consumption)',
+                    100: {'label':'100% more consumption (Double consumption)', 'style':{'right':'-200px'}},
                 },
                 tooltip={
                     'placement':'bottom'
@@ -410,7 +455,7 @@ app.layout = html.Div([
                     -50: '50% less streamflow',
                     0: 'No change',
                     50: '50% more streamflow',
-                    100: '100% more rain (Double streamflow)',
+                    100: {'label':'100% more streamflow (Double streamflow)', 'style':{'right':'-200px',}},
                 },
                 tooltip={
                     'placement':'bottom'
@@ -428,7 +473,7 @@ app.layout = html.Div([
                     40: '40 years forward',
                     60: '60 years forward',
                     80: '80 years forward',
-                    100: '100 years forward'
+                    100: {'label':'100 years forward', 'style':{'right':'-200px'}},
                 },
                 tooltip={
                     'placement':'bottom'
@@ -451,12 +496,28 @@ app.layout = html.Div([
     html.Div(id='predicted-image',
         children = [
             html.H2('Predicted surface area'),
-            html.Div(id='lake-predicted-image')
+            html.Div(id='lake-predicted-image', style={'max-width': '500px'})
         ]
     ),
     html.H2('Predicted effects based on policy choices:'),
 
-])
+],
+# style={
+#     'max-width':'800px',
+#     'display':'grid',
+#     'place-items':'center'
+# }
+)
+
+@app.callback(
+    Output('buyback-slider-display', 'style'),
+    Input('water-buybacks', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}
+    else:
+        return {'display': 'block'}
 
 @app.callback(
     Output('output-graph','figure'),
@@ -499,14 +560,12 @@ def modeling(_: int, selected_policies: list[str],
     if not weather:
         lr_average_elevation = round(prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
     else:
-        lr_avg_prediction = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
-        lr_average_elevation = round(lr_avg_prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
+        temp_prediction_weather = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
+        lr_average_elevation = round(temp_prediction_weather['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
 
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake)
 
-    closest_meter = int(lr_average_elevation)
-    image_path = f'/assets/gsl_{closest_meter}.png'
-    lake_picture = html.Img(src=image_path)
+    lake_picture = RetrieveImage(lr_average_elevation)
 
     return line_graph, lake_picture
 

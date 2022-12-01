@@ -1,0 +1,27 @@
+body {
+    padding: 1em 2.5em; 
+    max-width: 900px;
+    margin: auto;
+}
+
+
+/* labelStyle={
+    display: block
+    'text-indent': '-1.25em'
+},
+style={
+    'position':'relative',
+    'left': '1em'
+} */
+
+before-after-parent {
+    display:flex;
+    justify-content: center;
+    
+}
+
+/* .parent {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+} */
