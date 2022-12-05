@@ -71,7 +71,7 @@ def LoadMonthlyStats(path: str) -> pd.DataFrame:
     },inplace=True)
     return data
 
-def AdjustMonthlyStats(policies: list[Policy], monthly_stats: pd.DataFrame) -> pd.DataFrame:
+def AdjustMonthlyStats(policies: list, monthly_stats: pd.DataFrame) -> pd.DataFrame:
     '''
     Adjusts the monthly variables by the given policies
     '''
@@ -516,9 +516,9 @@ def DisplayWaterBuyback(selected):
     State('streamflow-slider','value'),
     State('weather-checklist','value')
 )
-def Modeling(_: int, selected_policies: list[str], 
+def Modeling(_: int, selected_policies: list, 
     rain_delta: int, consumption_delta: int, years_forward: int,
-    streamflow_delta: int,  weather: list[bool]) -> list[str]:
+    streamflow_delta: int,  weather: list) -> list:
 
     if len(weather) > 0:
         weather = True
