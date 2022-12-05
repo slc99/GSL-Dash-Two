@@ -1,1 +1,0 @@
-POLICY_CHECKLIST = 'policy-checklist'

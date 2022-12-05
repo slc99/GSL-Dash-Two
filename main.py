@@ -99,19 +99,6 @@ def GetUSGSSiteData(site_num: str, start_date: str, end_date: str, service='dv')
     df.reset_index(inplace=True)
     return df
 
-# def YearMonth(row):
-#     '''
-#     Function used for adding YYYY-MM column to lake dataframe. Really, not a great function 
-#     '''
-#     month_string = str(row['datetime'].month)
-#     if len(month_string) == 1:
-#         month_string = '0' + month_string
-        
-#     return str(row['datetime'].year)+ '-' + month_string
-
-def LoadBathData(path: str) -> pd.DataFrame:
-    return pd.read_csv(path, index_col=0)
-
 def CreateLakeData(path: str, bath_df: pd.DataFrame) -> pd.DataFrame:
     '''
     This function loads the historic data from the saved cvs and then updates with new data if required
@@ -129,8 +116,7 @@ def CreateLakeData(path: str, bath_df: pd.DataFrame) -> pd.DataFrame:
     
     new_data = GetUSGSSiteData('10010024',last_saved_day,today)
 
-    new_data = new_data['datetime'].dt.year.astype(str) + '-' + new_data['datetime'].dt.month.astype(str) #the better way
-    #new_data['YYYY-MM'] = new_data.apply(lambda row: YearMonth(row), axis=1)
+    new_data['YYYY-MM'] = new_data['datetime'].dt.year.astype(str) + '-' + new_data['datetime'].dt.month.astype(str) #the better way
     new_data = new_data.groupby(new_data['YYYY-MM']).mean()
     new_data = new_data.iloc[1:] 
 
@@ -317,10 +303,9 @@ def RetrieveImage(lr_average_elevation: float) -> html.Img:
     return html.Img(src=image_path)
 
 
-
 Policy.instantiate_from_csv('data/policies.csv')
 monthly_stats = LoadMonthlyStats('data/monthly_stats.csv')
-bath = LoadBathData('data/bath_df.csv')
+bath = pd.read_csv('data/bath_df.csv', index_col=0)
 lake = CreateLakeData('data/lake_df.csv', bath)
 
 
@@ -530,7 +515,7 @@ def DisplayWaterBuyback(selected):
     State('streamflow-slider','value'),
     State('weather-checklist','value')
 )
-def modeling(_: int, selected_policies: list[str], 
+def Modeling(_: int, selected_policies: list[str], 
     rain_delta: int, consumption_delta: int, years_forward: int,
     streamflow_delta: int,  weather: list[bool]) -> list[str]:
 
