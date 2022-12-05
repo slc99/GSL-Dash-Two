@@ -1,6 +1,6 @@
 gunicorn
+pandas
 dash==2.7.0
 dash-extensions==0.1.8
 dataretrieval==0.7
-pandas==1.5.20
 python-dateutil==2.8.2
