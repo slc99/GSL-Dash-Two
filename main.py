@@ -310,6 +310,7 @@ lake = CreateLakeData('data/lake_df.csv', bath)
 
 
 app = Dash(__name__)
+server = app.server
 
 
 app.layout = html.Div([
@@ -567,4 +568,4 @@ def ResetButton(_:int):
     return [], 0, 0, 20, 0, []
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
