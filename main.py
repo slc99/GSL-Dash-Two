@@ -310,7 +310,7 @@ lake = CreateLakeData('data/lake_df.csv', bath)
 
 
 app = Dash(__name__)
-server = app.server
+# server = app.server
 
 
 app.layout = html.Div([
@@ -544,10 +544,12 @@ def Modeling(_: int, selected_policies: list,
 
     MONTHS_BEFORE_LONG_RUN_AVG = 108
     if not weather:
-        lr_average_elevation = round(prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
+        # lr_average_elevation = round(prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
+        lr_average_elevation = round(prediction.tail(12)['Elevation Prediction'].mean(), 2)
     else:
         temp_prediction_weather = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
-        lr_average_elevation = round(temp_prediction_weather['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
+        # lr_average_elevation = round(temp_prediction_weather['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
+        lr_average_elevation = round(temp_prediction_weather.tail(12)['Elevation Prediction'].mean(), 2)
 
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake)
 
@@ -568,4 +570,4 @@ def ResetButton(_:int):
     return [], 0, 0, 20, 0, []
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
