@@ -16,14 +16,15 @@ class DataSchema:
     percip = 'percip'
     total_consumptive_use = 'total_consumptive_use'
     streamflow_before_consumption = 'streamflow_before_consumption'
+    
 
 class Policy:
 
     all_policies = []
 
-    def __init__(self, title: str, description: str, affected: str, affect_type: str, delta: float):
+    def __init__(self, title: str, description: str, affected: str, affect_type: str, delta: float, initial_cost: float, cost_per_year: float, slider: bool):
         
-        assert affect_type == ('proportion' or 'absolute'), f'Affect type: {affect_type}. Must be proportion or absolute.'
+        assert affect_type is 'proportion' or 'absolute', f'Affect type: {affect_type}. Must be proportion or absolute.'
         # assert affected in DataSchema.__dict__, f'Affected: {affected} not in {DataSchema.__dict__}'
 
         if affect_type == 'proportion':
@@ -34,6 +35,9 @@ class Policy:
         self.affected = affected
         self.affect_type = affect_type
         self.delta = delta
+        self.initial_cost = initial_cost
+        self.cost_per_year = cost_per_year
+        self.slider = slider
         self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
 
         Policy.all_policies.append(self)
@@ -53,7 +57,10 @@ class Policy:
                 description = policy.get('Description'),
                 affected = policy.get('Affected Variable'),
                 affect_type = policy.get('Affect Type'),
-                delta = float(policy.get('Delta')),
+                delta = float(policy.get('Delta per Year')),
+                initial_cost = float(policy.get('Cost to Implement')),
+                cost_per_year = float(policy.get('Cost per Year')),
+                slider = bool(policy.get('Slider'))
             )
 
 def LoadMonthlyStats(path: str) -> pd.DataFrame:
@@ -318,7 +325,7 @@ app.layout = html.Div([
         BeforeAfter(before={'src':'assets/gsl_before.jpg'}, after={'src':'assets/gsl_after.jpg'}, hover=False, id='before-after-image'),
         html.I('Click and drag to see differences in water level from 1986 to 2022')
     ]),
-    html.Div(id='policy-selector',
+    html.Div(id='policy-hell',
     children=[
         html.H2('Policy Options'),
         dcc.Checklist(id='water-buybacks',
