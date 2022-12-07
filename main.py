@@ -16,15 +16,22 @@ class DataSchema:
     percip = 'percip'
     total_consumptive_use = 'total_consumptive_use'
     streamflow_before_consumption = 'streamflow_before_consumption'
-    
+    agriculture_consumption = 'agriculture_consumption'
+    municipal_consumption = 'municipal_consumption'
+    mineral_consumption =  'mineral_consumption'
+    impounded_wetland_consumption = 'impounded_wetland_consumption'
+    reservoir_consumption =  'reservoir_consumption'
 
 class Policy:
 
     all_policies = []
+    slider_policies = []
 
-    def __init__(self, title: str, description: str, affected: str, affect_type: str, delta: float, initial_cost: float, cost_per_year: float, slider: bool):
+    def __init__(self, title: str, description: str, affected: str, 
+        affect_type: str, delta: float, initial_cost = 0, cost_per_year = 0, 
+        slider = '', slider_message = '',):
         
-        assert affect_type is 'proportion' or 'absolute', f'Affect type: {affect_type}. Must be proportion or absolute.'
+        # assert affect_type is 'proportion' or 'absolute', f'Affect type: {affect_type}. Must be proportion or absolute.'
         # assert affected in DataSchema.__dict__, f'Affected: {affected} not in {DataSchema.__dict__}'
 
         if affect_type == 'proportion':
@@ -38,13 +45,46 @@ class Policy:
         self.initial_cost = initial_cost
         self.cost_per_year = cost_per_year
         self.slider = slider
+        self.slider_message = slider_message
+        self.cost_first_twenty_millions = int((initial_cost + (cost_per_year * 20))/1000000)
         self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
+        self.id_name = title.replace(' ','-').lower()
+
+        self.checklist_component = dcc.Checklist(
+                id=self.id_name + '-checklist',
+                options = [{'label': self.checklist_label, 'value': self.title}],
+                value = [],
+                labelStyle={'display': 'block','text-indent': '-1.25em'},
+                style={'position':'relative','left': '1em'}
+            )
+        self.slider_component = html.Span(
+                id=self.id_name + '-display',
+                children = [
+                    html.I(self.slider_message,style={'position':'relative','left': '1em'}),
+                    html.Br(),
+                    dcc.Slider(
+                    id = self.id_name + '-slider',
+                    min = 0,
+                    max = self.cost_first_twenty_millions,
+                    value = 0,
+                    marks = {
+                        0: '$0', 
+                        int(self.cost_first_twenty_millions/2): f'${self.cost_first_twenty_millions/2} million', 
+                        int(self.cost_first_twenty_millions): {'label':f'${self.cost_first_twenty_millions} million', 'style':{'right':'-200px'}}
+                    },
+                    tooltip={'placement':'bottom'}), 
+                ], 
+            style={'display': 'none'}
+        )
 
         Policy.all_policies.append(self)
 
+        if self.slider:
+            Policy.slider_policies.append(self)
+
+
     def __repr__(self):
         return f'{self.title}, {self.description}, {self.affected}, {self.affect_type}, {self.delta}'
-
 
     @classmethod
     def instantiate_from_csv(cls, path: str):
@@ -60,7 +100,8 @@ class Policy:
                 delta = float(policy.get('Delta per Year')),
                 initial_cost = float(policy.get('Cost to Implement')),
                 cost_per_year = float(policy.get('Cost per Year')),
-                slider = bool(policy.get('Slider'))
+                slider = bool(policy.get('Slider')),
+                slider_message = policy.get('Slider Message'),
             )
 
 def LoadMonthlyStats(path: str) -> pd.DataFrame:
@@ -75,6 +116,11 @@ def LoadMonthlyStats(path: str) -> pd.DataFrame:
         'Percipitation (mm)': DataSchema.percip, 
         'Consumptive use': DataSchema.total_consumptive_use,
         'Streamflow without consumption': DataSchema.streamflow_before_consumption,
+        'agriculture consumption': DataSchema.agriculture_consumption,
+        'municipal consumption': DataSchema.municipal_consumption,
+        'reservoir consumption': DataSchema.reservoir_consumption,
+        'mineral consumption': DataSchema.mineral_consumption,
+        'wetland consumption': DataSchema.impounded_wetland_consumption,
     },inplace=True)
     return data
 
@@ -90,8 +136,16 @@ def AdjustMonthlyStats(policies: list, monthly_stats: pd.DataFrame) -> pd.DataFr
     for policy in policies:
         if policy.affect_type == 'absolute':
             adjusted_monthly[policy.affected] += policy.delta
+            adjusted_monthly[policy.affected].clip(0,inplace=True)
     
-    adjusted_monthly[DataSchema.total_consumptive_use].clip(0,inplace=True)
+    adjusted_monthly[DataSchema.total_consumptive_use] = (
+        adjusted_monthly[DataSchema.agriculture_consumption] 
+        + adjusted_monthly[DataSchema.municipal_consumption]
+        + adjusted_monthly[DataSchema.reservoir_consumption]
+        + adjusted_monthly[DataSchema.mineral_consumption]
+        + adjusted_monthly[DataSchema.impounded_wetland_consumption]
+    )
+
 
     adjusted_monthly[DataSchema.streamflow_after_consumption] = (
         adjusted_monthly[DataSchema.streamflow_before_consumption] - adjusted_monthly[DataSchema.total_consumptive_use])
@@ -315,94 +369,58 @@ monthly_stats = LoadMonthlyStats('data/monthly_stats.csv')
 bath = pd.read_csv('data/bath_df.csv', index_col=0)
 lake = CreateLakeData('data/lake_df.csv', bath)
 
+slider_policy_list = []
+for policy in Policy.slider_policies:
+    slider_policy_list.append(policy.checklist_component)
+    slider_policy_list.append(policy.slider_component)
 
 app = Dash(__name__)
 # server = app.server
 
 
 app.layout = html.Div([
-    html.Div(id='before-after-parent',children=[
-        BeforeAfter(before={'src':'assets/gsl_before.jpg'}, after={'src':'assets/gsl_after.jpg'}, hover=False, id='before-after-image'),
-        html.I('Click and drag to see differences in water level from 1986 to 2022')
-    ]),
-    html.Div(id='policy-hell',
-    children=[
-        html.H2('Policy Options'),
-        dcc.Checklist(id='water-buybacks',
-            options = [{
-                'label': html.Span(children=[
-                    html.Strong('Water Rights buyback'), 
-                    html.Br() ,
-                    'Instutute water buybacks program as described here',
-                    html.Br()
-                    ]), 
-                'value': True
-                }],
-            value = [],
-            labelStyle={
-                'display': 'block',
-                'text-indent': '-1.25em'
-            },
-            style={
-                'position':'relative',
-                'left': '1em'
-            }
-        ),
-        html.Span(id='buyback-slider-display',
-            children = [
-                dcc.Slider(
-                        id = 'buyback-slider',
-                        min = 0,
-                        max = 100,
-                        value = 50,
-                        marks = {
-                            0: '$0',
-                            50: '$50 million',
-                            100: {'label':'$100 million', 'style':{'right':'-200px'}}
-                        },
-                        tooltip={
-                            'placement':'bottom'
-                        }
-                ),
-            ],
-            style = {'display': 'none'}
-        ),
-        dcc.Checklist(id='policy-checklist',
-            options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies],
-            value=[],
-            labelStyle={
-                'display': 'block',
-                'text-indent': '-1.25em'
-            },
-            style={
-                'position':'relative',
-                'left': '1em'
-            }
-        ),
-        dcc.Checklist(id='weather-checklist',
-            options = [{
-                'label': html.Span(children=[
-                    html.Strong('Cosmetic Weather'), 
-                    html.Br() ,
-                    'Activate RANDOMLY generated weather. Does not change predicted long term average.',
-                    html.Br()
-                    ]), 
-                'value': True
-                }],
-            value = [],
-            labelStyle={
-                'display': 'block',
-                'text-indent': '-1.25em'
-            },
-            style={
-                'position':'relative',
-                'left': '1em'
-            }
-        ),
-    ]),
-    html.Div(id='sliders',
+    html.Div(
+        id='before-after-parent',
         children=[
-            html.H2('Enviromental Sliders'),
+            BeforeAfter(before={'src':'assets/gsl_before.jpg'}, after={'src':'assets/gsl_after.jpg'}, hover=False, id='before-after-image'),
+            html.I('Click and drag to see differences in water level from 1986 to 2022')
+        ]
+    ),
+    html.H2('Policy Options'),
+    html.Div(
+        id='policy-sliders',
+        children = slider_policy_list
+    ),
+    html.Div(
+        id='policy-checklist-container',
+        children = [
+            dcc.Checklist(
+                id='policy-checklist',
+                options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies if not x.slider],
+                value=[],
+                labelStyle={'display': 'block','text-indent': '-1.25em'},
+                style={'position':'relative','left': '1em'}
+            ),
+        ]
+    ),
+    html.Div(id='enviroment',
+        children=[
+            html.H2('Enviroment Variables'),
+            dcc.Checklist(id='weather-checklist',
+                options = [{
+                    'label': html.Span(children=[
+                        html.Strong('Cosmetic Weather'), 
+                        html.Br() ,
+                        'Activate RANDOMLY generated weather. Does not change predicted long term average.',
+                        html.Br()
+                        ]), 
+                    'value': True
+                    }],
+                value = [],
+                labelStyle={'display': 'block','text-indent': '-1.25em'},
+                style={'position':'relative','left': '1em'}
+            ),
+            html.Br(),
             html.Strong('Adjust direct rainfall'),
             dcc.Slider(
                 id = 'rain-slider',
@@ -493,24 +511,9 @@ app.layout = html.Div([
         ]
     ),
     html.H2('Predicted effects based on policy choices:'),
+])
 
-],
-# style={
-#     'max-width':'800px',
-#     'display':'grid',
-#     'place-items':'center'
-# }
-)
 
-@app.callback(
-    Output('buyback-slider-display', 'style'),
-    Input('water-buybacks', 'value'),
-)
-def DisplayWaterBuyback(selected):
-    if len(selected) == 0:
-        return {'display': 'none'}
-    else:
-        return {'display': 'block'}
 
 @app.callback(
     Output('output-graph','figure'),
@@ -521,21 +524,50 @@ def DisplayWaterBuyback(selected):
     State('human-consumption-slider','value'),
     State('years-forward-slider','value'),
     State('streamflow-slider','value'),
-    State('weather-checklist','value')
+    State('weather-checklist','value'),
+    State(Policy.slider_policies[0].id_name + '-slider','value'),
+    State(Policy.slider_policies[1].id_name + '-slider','value'),
+    State(Policy.slider_policies[2].id_name + '-slider','value'),
+    State(Policy.slider_policies[3].id_name + '-slider','value'),
+    State(Policy.slider_policies[4].id_name + '-slider','value'),
+    State(Policy.slider_policies[5].id_name + '-slider','value'),
+    State(Policy.slider_policies[6].id_name + '-slider','value'),
+    State(Policy.slider_policies[7].id_name + '-slider','value'),
+    State(Policy.slider_policies[8].id_name + '-slider','value'),
+
 )
-def Modeling(_: int, selected_policies: list, 
-    rain_delta: int, consumption_delta: int, years_forward: int,
-    streamflow_delta: int,  weather: list) -> list:
+def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, weather: list, 
+    slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, slider_7: float, slider_8: float,) -> list:
+
+    applied_policies = []
+
+    policy_slider_values = [slider_0,slider_1,slider_2,slider_3,slider_4,slider_5,slider_6,slider_7,slider_8]
+    i=0
+    for selected_cost in policy_slider_values:
+        max_consumption_change = Policy.slider_policies[i].delta
+        max_yearly_cost = (Policy.slider_policies[i].cost_first_twenty_millions) / 20
+        selected_consumption_change = max_consumption_change * (selected_cost / max_yearly_cost)
+        applied_policies.append(
+            Policy(
+                f'slider {i}',
+                'n/a',
+                Policy.slider_policies[i].affected,
+                Policy.slider_policies[i].affect_type,
+                delta=selected_consumption_change
+            )
+        )
+        i += 1
+        pass
 
     if len(weather) > 0:
         weather = True
     else:
         weather = False
 
-    applied_policies = []
     for policy in Policy.all_policies:
-        if policy.title in selected_policies:
+        if policy.title in checklist_policies:
             applied_policies.append(policy)
+    
 
     rain_delta = (rain_delta+100) / 100
     applied_policies.append(Policy('rain-slider','n/a',DataSchema.percip,'proportion',delta=rain_delta))
@@ -575,6 +607,98 @@ def Modeling(_: int, selected_policies: list,
 )
 def ResetButton(_:int):
     return [], 0, 0, 20, 0, []
+
+# Below are the dash call back for policy sliders. There must be a better way...
+@app.callback(
+    Output(Policy.slider_policies[0].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[0].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[0].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[1].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[1].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[1].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[2].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[2].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[2].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[3].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[3].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[3].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[4].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[4].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[4].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[5].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[5].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[5].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[6].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[6].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[6].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[7].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[7].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[7].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
+@app.callback(
+    Output(Policy.slider_policies[8].id_name + '-display', 'style'),
+    Output(Policy.slider_policies[8].id_name + '-slider', 'value'),
+    Input(Policy.slider_policies[8].id_name + '-checklist', 'value'),
+)
+def DisplayWaterBuyback(selected):
+    if len(selected) == 0:
+        return {'display': 'none'}, 0
+    else:
+        return {'display': 'block'}, 0
 
 if __name__ == '__main__':
     app.run_server(debug=True)
