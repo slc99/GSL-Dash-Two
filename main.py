@@ -146,6 +146,13 @@ def AdjustMonthlyStats(policies: list, monthly_stats: pd.DataFrame) -> pd.DataFr
         + adjusted_monthly[DataSchema.impounded_wetland_consumption]
     )
 
+    for policy in policies:
+        if policy.affected == DataSchema.total_consumptive_use:
+            if policy.affect_type == 'proportion':
+                adjusted_monthly[policy.affected] *= policy.delta
+            if policy.affect_type == 'absolute':
+                adjusted_monthly[policy.affected] += policy.delta
+                adjusted_monthly[policy.affected].clip(0,inplace=True)
 
     adjusted_monthly[DataSchema.streamflow_after_consumption] = (
         adjusted_monthly[DataSchema.streamflow_before_consumption] - adjusted_monthly[DataSchema.total_consumptive_use])
@@ -545,19 +552,20 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     i=0
     for selected_cost in policy_slider_values:
         max_consumption_change = Policy.slider_policies[i].delta
-        max_yearly_cost = (Policy.slider_policies[i].cost_first_twenty_millions) / 20
-        selected_consumption_change = max_consumption_change * (selected_cost / max_yearly_cost)
+        max_yearly_cost = Policy.slider_policies[i].cost_first_twenty_millions
+        selected_consumption_change_monthly = (selected_cost * (max_consumption_change / max_yearly_cost)) /12
+        print(selected_consumption_change_monthly)
         applied_policies.append(
             Policy(
                 f'slider {i}',
                 'n/a',
                 Policy.slider_policies[i].affected,
                 Policy.slider_policies[i].affect_type,
-                delta=selected_consumption_change
+                delta = -selected_consumption_change_monthly
             )
         )
+        print(applied_policies)
         i += 1
-        pass
 
     if len(weather) > 0:
         weather = True
@@ -579,6 +587,7 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     applied_policies.append(Policy('streamflow-slider','n/a',DataSchema.streamflow_before_consumption,'proportion',delta=streamflow_delta))
 
     adjusted_monthly_stats = AdjustMonthlyStats(applied_policies, monthly_stats)
+    print(adjusted_monthly_stats[DataSchema.agriculture_consumption])
     prediction = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
 
     MONTHS_BEFORE_LONG_RUN_AVG = 108
