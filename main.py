@@ -8,6 +8,7 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 import plotly.express as px
 from dash_extensions import BeforeAfter
+import plotly.graph_objects as go
 
 class DataSchema:
     streamflow_after_consumption = 'streamflow_after_consumption'
@@ -262,14 +263,26 @@ def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
         
     return predictions
 
-def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lake: pd.DataFrame, rolling=60) -> px.scatter:
+def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lake: pd.DataFrame, units: str, rolling=60) -> px.scatter:
 
-    MEAN_ELEVATION_WITHOUT_HUMANS = 1282.3
+    mean_elevation_without_humans = 1282.3
+    METERS_TO_FEET = 3.28084
 
+    avg_elevation = round(df_lake['Elevation'].mean(),2)
     combined = pd.concat([df_lake,prediction],ignore_index=True)
 
     temp = pd.concat([combined.iloc[len(df_lake)-rolling:len(df_lake)]['Elevation'],combined.iloc[len(df_lake):]['Elevation Prediction']])
     combined['Elevation Prediction'] = temp
+
+    if units == 'imperial':
+        elevation_unit = 'ft'
+        combined['Elevation Prediction'] *= METERS_TO_FEET
+        lr_average_elevaton *= METERS_TO_FEET
+        combined['Elevation'] *= METERS_TO_FEET
+        mean_elevation_without_humans *= METERS_TO_FEET
+        avg_elevation *= METERS_TO_FEET
+    else:
+        elevation_unit = 'm'
 
     colors = ['blue','red']
 
@@ -280,7 +293,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
                         trendline_options=dict(window=rolling),
                         color_discrete_sequence=colors,
                         labels = {
-                            'value':'Lake Elevation (m)',
+                            'value':f'Lake Elevation ({elevation_unit})',
                             'datetime':'Year'
                         },
                     )
@@ -293,7 +306,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
     fig.data = [t for t in fig.data if t.mode == 'lines']
 
     #assign label positions
-    if (0 < (MEAN_ELEVATION_WITHOUT_HUMANS - lr_average_elevaton) < 0.4) or (0 < (df_lake['Elevation'].mean() - lr_average_elevaton) < 0.4):
+    if (0 < (mean_elevation_without_humans - lr_average_elevaton) < 0.4) or (0 < (df_lake['Elevation'].mean() - lr_average_elevaton) < 0.4):
         lr_pos = 'bottom left'
         human_pos = 'top left'
     elif 0 < (lr_average_elevaton - df_lake['Elevation'].mean()) < 0.4:
@@ -303,15 +316,15 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
         lr_pos = 'top left'
         human_pos = 'top left'
 
-    fig.add_hline(y=MEAN_ELEVATION_WITHOUT_HUMANS, line_dash='dot',
-                    annotation_text = f'Average Natural Level, {MEAN_ELEVATION_WITHOUT_HUMANS}m',
+    fig.add_hline(y=mean_elevation_without_humans, line_dash='dot',
+                    annotation_text = f'Average Natural Level, {mean_elevation_without_humans}{elevation_unit}',
                     annotation_position = 'top left',
                     annotation_font_size = 10,
                     annotation_font_color = 'black',
                     )
-    avg_elevation = round(df_lake['Elevation'].mean(),2)
+
     fig.add_hline(y=avg_elevation, line_dash='dot',
-                annotation_text = f'Average Since 1847, {avg_elevation}m',
+                annotation_text = f'Average Since 1847, {avg_elevation}{elevation_unit}',
                 annotation_position = human_pos,
                 annotation_font_size = 10,
                 annotation_font_color = colors[0],
@@ -320,7 +333,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
 
     fig.add_hline(y=lr_average_elevaton, 
                     line_dash='dot',
-                    annotation_text = f'Long-term Policy Average, {lr_average_elevaton}m',
+                    annotation_text = f'Long-term Policy Average, {lr_average_elevaton}{elevation_unit}',
                     annotation_position = lr_pos,
                     annotation_font_size = 10,
                     annotation_font_color = colors[1],
@@ -370,6 +383,55 @@ def RetrieveImage(lr_average_elevation: float) -> html.Img:
     image_path = f'/assets/gsl_{closest_half_meter}.png'
     return html.Img(src=image_path)
 
+def CreateSankeyDiagram() -> go.Figure:
+    labels = ['Streamflow','Bear River','Weber River','Jordan River','Groundwater','Direct Percipitation','Total Water In','Mineral Extraction','Evaporation',
+        'Lake Water Lost','Total Water Out','Other Streams']
+
+    #Data is average from 1963 to 2022. Mineral extraction data is from 1994 to 2014. Other stream data is assumed to be linearly dependent upon the other three streams
+    units = "km^3/yr"
+    fig = go.Figure(
+        data=go.Sankey(
+            arrangement = "snap",
+            valuesuffix = units,
+            node = dict(
+                label = labels,
+                x = [0.25, 0, 0, 0, 0.25, 0.25, 0.5, 1, 1, 0.5, 0.75, 0],
+                y = [0.5] * 10,
+                # y = [1, 1, 0.9, 0.8, 0.8, 0.9, 1, 0.9, 1, 0.9, 1, 0.7],
+                hovertemplate = "%{label}"
+            ),
+            link = dict(
+                source = [1, 2, 3, 0, 4, 5, 10, 10, 6, 9, 11],
+                target = [0, 0, 0, 6, 6, 6, 7, 8, 10, 10, 0],
+                value = [1.59, 0.377, 0.52, 2.63, 0.09, 1.47, 0.19, 4.25, 4.19, 0.25, 0.14],
+            ),
+        )
+    )
+    return fig
+
+def CreateConsumptiveUseSunburst(unit: str) -> px.pie:
+    
+    ACRE_FEET_PER_KM3 = 810714
+
+    consumptive_average = pd.read_pickle('data/pie_chart_pickle.pkl')
+
+    if unit == 'imperial':
+        volume_unit = 'acre feet'
+    else:
+        volume_unit = 'km3'
+
+    consumptive_average.rename(columns={'Consumption (farkle/yr)': f'Consumption ({volume_unit}/yr)'},inplace=True)
+
+    pie_chart = px.pie(
+            consumptive_average, 
+            values=f'Consumption ({volume_unit}/yr)',
+            names='Consumption category',
+            hover_name='Consumption category',
+            hole=0.5,
+            )
+    pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.3f}' +f' {volume_unit}/yr')
+    
+    return pie_chart
 
 Policy.instantiate_from_csv('data/policies.csv')
 monthly_stats = LoadMonthlyStats('data/monthly_stats.csv')
@@ -393,6 +455,8 @@ app.layout = html.Div([
             html.I('Click and drag to see differences in water level from 1986 to 2022')
         ]
     ),
+    dcc.Graph(id='sankey-diagram', figure=CreateSankeyDiagram()),
+    dcc.Graph(id='consumptive-use-sunburst'),
     html.H2('Policy Options'),
     html.Div(
         id='policy-sliders',
@@ -479,32 +543,36 @@ app.layout = html.Div([
                     'placement':'bottom'
                 }
             ),
-            html.Strong('How many years in the future to predict'),
-            dcc.Slider(
-                id = 'years-forward-slider',
-                min = 20,
-                max = 100,
-                value = 20,
-                step = 1,
-                marks = {
-                    20: '20 years forward',
-                    40: '40 years forward',
-                    60: '60 years forward',
-                    80: '80 years forward',
-                    100: {'label':'100 years forward', 'style':{'right':'-200px'}},
-                },
-                tooltip={
-                    'placement':'bottom'
-                }
+            html.Span(
+                children = [
+                html.Strong('How many years in the future to predict'),
+                dcc.Slider(
+                    id = 'years-forward-slider',
+                    min = 20,
+                    max = 100,
+                    value = 30,
+                    step = 1,
+                    marks = {
+                        20: '20 years forward',
+                        40: '40 years forward',
+                        60: '60 years forward',
+                        80: '80 years forward',
+                        100: {'label':'100 years forward', 'style':{'right':'-200px'}},
+                    },
+                    tooltip={'placement':'bottom'},
+                ),
+                ],
+            style={'display': 'none'}
             ),
 
         ]
     ),
 
+    dcc.Dropdown(id = 'unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
     html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
     html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection'),
-
-    html.Div(id='line-graph',
+    html.Div(
+        id='line-graph',
         children=[
             html.H2('Graph of predicted elevation'),
             dcc.Graph(id='output-graph'),
@@ -532,6 +600,7 @@ app.layout = html.Div([
     State('years-forward-slider','value'),
     State('streamflow-slider','value'),
     State('weather-checklist','value'),
+    State('unit-dropdown','value'),
     State(Policy.slider_policies[0].id_name + '-slider','value'),
     State(Policy.slider_policies[1].id_name + '-slider','value'),
     State(Policy.slider_policies[2].id_name + '-slider','value'),
@@ -543,9 +612,10 @@ app.layout = html.Div([
     State(Policy.slider_policies[8].id_name + '-slider','value'),
 
 )
-def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, weather: list, 
+def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, weather: list, units: str,
     slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, slider_7: float, slider_8: float,) -> list:
 
+    #this is a list of policy objects that are applied to the 'monthly_stats' dataframe
     applied_policies = []
 
     policy_slider_values = [slider_0,slider_1,slider_2,slider_3,slider_4,slider_5,slider_6,slider_7,slider_8]
@@ -553,8 +623,8 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     for selected_cost in policy_slider_values:
         max_consumption_change = Policy.slider_policies[i].delta
         max_yearly_cost = Policy.slider_policies[i].cost_first_twenty_millions
+        # this equation figures out the monthly change to consumption given the selected investment amount
         selected_consumption_change_monthly = (selected_cost * (max_consumption_change / max_yearly_cost)) /12
-        print(selected_consumption_change_monthly)
         applied_policies.append(
             Policy(
                 f'slider {i}',
@@ -564,18 +634,20 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
                 delta = -selected_consumption_change_monthly
             )
         )
-        print(applied_policies)
         i += 1
 
+    # the dash component passes 'weather' as a list
     if len(weather) > 0:
         weather = True
     else:
         weather = False
 
+    #adds checklist policies (without a slider) to the policies to apply
     for policy in Policy.all_policies:
         if policy.title in checklist_policies:
             applied_policies.append(policy)
     
+
 
     rain_delta = (rain_delta+100) / 100
     applied_policies.append(Policy('rain-slider','n/a',DataSchema.percip,'proportion',delta=rain_delta))
@@ -586,24 +658,35 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     streamflow_delta = (streamflow_delta + 100) / 100
     applied_policies.append(Policy('streamflow-slider','n/a',DataSchema.streamflow_before_consumption,'proportion',delta=streamflow_delta))
 
+    #adjust monthly stats based on the selected policies
     adjusted_monthly_stats = AdjustMonthlyStats(applied_policies, monthly_stats)
-    print(adjusted_monthly_stats[DataSchema.agriculture_consumption])
+
+    #run the model based on the adjusted monthly stats
     prediction = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
 
+    #long run average is based on the average of the last year. If weather is selected, the model is ran again without weather to find the true lr average
     MONTHS_BEFORE_LONG_RUN_AVG = 108
     if not weather:
         # lr_average_elevation = round(prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
         lr_average_elevation = round(prediction.tail(12)['Elevation Prediction'].mean(), 2)
     else:
-        temp_prediction_weather = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
+        temp_prediction_weather = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=False)
         # lr_average_elevation = round(temp_prediction_weather['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
         lr_average_elevation = round(temp_prediction_weather.tail(12)['Elevation Prediction'].mean(), 2)
 
-    line_graph = CreateLineGraph(prediction, lr_average_elevation, lake)
+    # units cosmetically change graph
+    line_graph = CreateLineGraph(prediction, lr_average_elevation, lake, units)
 
     lake_picture = RetrieveImage(lr_average_elevation)
 
     return line_graph, lake_picture
+
+@app.callback(
+    Output('consumptive-use-sunburst','figure'),
+    Input('unit-dropdown','value'),
+)
+def DrawSunburst(unit):
+    return CreateConsumptiveUseSunburst(unit)
 
 @app.callback(
     Output('policy-checklist','value'),
