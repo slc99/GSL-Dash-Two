@@ -47,7 +47,7 @@ class Policy:
         self.cost_per_year = cost_per_year
         self.slider = slider
         self.slider_message = slider_message
-        self.cost_first_twenty_millions = int((initial_cost + (cost_per_year * 20))/1000000)
+        self.first_thirty_cost_in_millions = int((initial_cost + (cost_per_year * 30))/1000000)
         self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
         self.id_name = title.replace(' ','-').lower()
 
@@ -66,12 +66,12 @@ class Policy:
                     dcc.Slider(
                     id = self.id_name + '-slider',
                     min = 0,
-                    max = self.cost_first_twenty_millions,
+                    max = self.first_thirty_cost_in_millions,
                     value = 0,
                     marks = {
                         0: '$0', 
-                        int(self.cost_first_twenty_millions/2): f'${self.cost_first_twenty_millions/2} million', 
-                        int(self.cost_first_twenty_millions): {'label':f'${self.cost_first_twenty_millions} million', 'style':{'right':'-200px'}}
+                        int(self.first_thirty_cost_in_millions/2): f'${self.first_thirty_cost_in_millions/2} million', 
+                        int(self.first_thirty_cost_in_millions): {'label':f'${self.first_thirty_cost_in_millions} million', 'style':{'right':'-200px'}}
                     },
                     tooltip={'placement':'bottom'}), 
                 ], 
@@ -186,7 +186,7 @@ def CreateLakeData(path: str, bath_df: pd.DataFrame) -> pd.DataFrame:
     new_data = GetUSGSSiteData('10010024',last_saved_day,today)
 
     new_data['YYYY-MM'] = new_data['datetime'].dt.year.astype(str) + '-' + new_data['datetime'].dt.month.astype(str) #the better way
-    new_data = new_data.groupby(new_data['YYYY-MM']).mean()
+    new_data = new_data.groupby(new_data['YYYY-MM']).mean(numeric_only=True)
     new_data = new_data.iloc[1:] 
 
     new_data.rename(columns={'62614_Mean':'Elevation'},inplace=True)
@@ -247,8 +247,8 @@ def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
             gained_rain *= 1 + (weather_factor + lr_weather_factor)
             gained_stream *= 1 + (weather_factor +  lr_weather_factor)
         
-        gained_ground = 0.00775
-        net = gained_rain + gained_stream + gained_ground - lost_evap
+        GAINED_GROUND_WATER_MONTHLY = 0.00775
+        net = gained_rain + gained_stream + GAINED_GROUND_WATER_MONTHLY - lost_evap
         
         volume += net
         
@@ -383,16 +383,28 @@ def RetrieveImage(lr_average_elevation: float) -> html.Img:
     image_path = f'/assets/gsl_{closest_half_meter}.png'
     return html.Img(src=image_path)
 
-def CreateSankeyDiagram() -> go.Figure:
+def CreateSankeyDiagram(units: str) -> go.Figure:
+
     labels = ['Streamflow','Bear River','Weber River','Jordan River','Groundwater','Direct Percipitation','Total Water In','Mineral Extraction','Evaporation',
         'Lake Water Lost','Total Water Out','Other Streams']
 
-    #Data is average from 1963 to 2022. Mineral extraction data is from 1994 to 2014. Other stream data is assumed to be linearly dependent upon the other three streams
-    units = "km^3/yr"
+    ACRE_FEET_PER_KM3 = 810714
+    
+    # Data is average from 1963 to 2022. Mineral extraction data is from 1994 to 2014. Other stream data is assumed to be linearly dependent upon the other three streams
+    # lame these are hard coded in but what can you do
+    km3_per_year_values = [1.59, 0.377, 0.52, 2.63, 0.09, 1.47, 0.19, 4.25, 4.19, 0.25, 0.14]
+
+    if units == 'metric':
+        volume_unit = 'km3/yr'
+        values = km3_per_year_values
+    else:
+        volume_unit = 'AF/yr'
+        values = [x * ACRE_FEET_PER_KM3 for x in km3_per_year_values]
+
     fig = go.Figure(
         data=go.Sankey(
             arrangement = "snap",
-            valuesuffix = units,
+            valuesuffix = volume_unit,
             node = dict(
                 label = labels,
                 x = [0.25, 0, 0, 0, 0.25, 0.25, 0.5, 1, 1, 0.5, 0.75, 0],
@@ -403,7 +415,7 @@ def CreateSankeyDiagram() -> go.Figure:
             link = dict(
                 source = [1, 2, 3, 0, 4, 5, 10, 10, 6, 9, 11],
                 target = [0, 0, 0, 6, 6, 6, 7, 8, 10, 10, 0],
-                value = [1.59, 0.377, 0.52, 2.63, 0.09, 1.47, 0.19, 4.25, 4.19, 0.25, 0.14],
+                value = values,
             ),
         )
     )
@@ -417,10 +429,11 @@ def CreateConsumptiveUseSunburst(unit: str) -> px.pie:
 
     if unit == 'imperial':
         volume_unit = 'acre feet'
+        consumptive_average['Consumption (km3/yr)'] *= ACRE_FEET_PER_KM3
     else:
         volume_unit = 'km3'
 
-    consumptive_average.rename(columns={'Consumption (farkle/yr)': f'Consumption ({volume_unit}/yr)'},inplace=True)
+    consumptive_average.rename(columns={'Consumption (km3/yr)': f'Consumption ({volume_unit}/yr)'},inplace=True)
 
     pie_chart = px.pie(
             consumptive_average, 
@@ -443,6 +456,7 @@ for policy in Policy.slider_policies:
     slider_policy_list.append(policy.checklist_component)
     slider_policy_list.append(policy.slider_component)
 
+
 app = Dash(__name__)
 # server = app.server
 
@@ -455,9 +469,9 @@ app.layout = html.Div([
             html.I('Click and drag to see differences in water level from 1986 to 2022')
         ]
     ),
-    dcc.Graph(id='sankey-diagram', figure=CreateSankeyDiagram()),
+    dcc.Graph(id='sankey-diagram'),
     dcc.Graph(id='consumptive-use-sunburst'),
-    html.H2('Policy Options'),
+    html.Div(children=[html.H2('Policy Options',style={'margin-bottom':'0em'}),html.A('Sources',href='#about-the-policies')],style={'margin-bottom':'1em'}),
     html.Div(
         id='policy-sliders',
         children = slider_policy_list
@@ -568,7 +582,7 @@ app.layout = html.Div([
         ]
     ),
 
-    dcc.Dropdown(id = 'unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
+    dcc.Dropdown(id = 'unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'imperial'),
     html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
     html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection'),
     html.Div(
@@ -586,9 +600,23 @@ app.layout = html.Div([
         ]
     ),
     html.H2('Predicted effects based on policy choices:'),
+    html.Div(
+        id='about-the-policies',
+        children=[
+        html.P('Here is some policy text!')
+        ]
+    )
 ])
 
 
+@app.callback(
+    Output('consumptive-use-sunburst','figure'),
+    Output('sankey-diagram', 'figure'),
+    Input('unit-dropdown','value'),
+)
+def DrawSunburstAndSankey(unit):
+    print(unit)
+    return CreateConsumptiveUseSunburst(unit), CreateSankeyDiagram(unit)
 
 @app.callback(
     Output('output-graph','figure'),
@@ -610,7 +638,7 @@ app.layout = html.Div([
     State(Policy.slider_policies[6].id_name + '-slider','value'),
     State(Policy.slider_policies[7].id_name + '-slider','value'),
     State(Policy.slider_policies[8].id_name + '-slider','value'),
-
+    # prevent_initial_call=True
 )
 def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, weather: list, units: str,
     slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, slider_7: float, slider_8: float,) -> list:
@@ -622,7 +650,7 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     i=0
     for selected_cost in policy_slider_values:
         max_consumption_change = Policy.slider_policies[i].delta
-        max_yearly_cost = Policy.slider_policies[i].cost_first_twenty_millions
+        max_yearly_cost = Policy.slider_policies[i].first_thirty_cost_in_millions
         # this equation figures out the monthly change to consumption given the selected investment amount
         selected_consumption_change_monthly = (selected_cost * (max_consumption_change / max_yearly_cost)) /12
         applied_policies.append(
@@ -646,7 +674,6 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     for policy in Policy.all_policies:
         if policy.title in checklist_policies:
             applied_policies.append(policy)
-    
 
 
     rain_delta = (rain_delta+100) / 100
@@ -681,12 +708,6 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
 
     return line_graph, lake_picture
 
-@app.callback(
-    Output('consumptive-use-sunburst','figure'),
-    Input('unit-dropdown','value'),
-)
-def DrawSunburst(unit):
-    return CreateConsumptiveUseSunburst(unit)
 
 @app.callback(
     Output('policy-checklist','value'),
@@ -698,9 +719,9 @@ def DrawSunburst(unit):
     Input('reset-model-button', 'n_clicks')
 )
 def ResetButton(_:int):
-    return [], 0, 0, 20, 0, []
+    return [], 0, 0, 30, 0, []
 
-# Below are the dash call back for policy sliders. There must be a better way...
+# Below are the dash call back for policy sliders. Each callback displays or hides the slider based on the adjoining checkbox. It also resets it to zero when hidden
 @app.callback(
     Output(Policy.slider_policies[0].id_name + '-display', 'style'),
     Output(Policy.slider_policies[0].id_name + '-slider', 'value'),
