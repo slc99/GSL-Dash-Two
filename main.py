@@ -430,18 +430,36 @@ def CreateConsumptiveUseSunburst(unit: str) -> px.pie:
     
     return pie_chart
 
-def CreateWrittenPolicyEffects(applied_policies: list[Policy], unit_designation: str) -> html.Div:
+def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, bath: pd.DataFrame, unit_designation: str) -> html.Div:
 
+    MI2_PER_KM2 = 0.386102
+    AVERAGE_M_SINCE_1847 = 1282.30
     ACRE_FEET_PER_KM3 = 810714
     FEET_PER_METER = 3.28084
 
+    historical_average_sa = bath.at[AVERAGE_M_SINCE_1847, 'Surface Area']
+    predicted_average_sa = bath.at[lr_elevation, 'Surface Area']
+    change_in_sa = predicted_average_sa - historical_average_sa
+    percent_change_sa = 100 * change_in_sa / historical_average_sa
+
+    if change_in_sa > 0:
+        words = ['less', 'decrease']
+    else:
+        words = ['more','increase']
+    
     if unit_designation == 'imperial':
         volume_unit = 'AF'
         elevation_unit = 'ft'
+        area_unit = 'mi2'
+        area_unit_words = 'square miles'
+        change_in_sa *= MI2_PER_KM2
     else:
         volume_unit = 'km3'
         elevation_unit = 'm'
-
+        area_unit = 'km2'
+        area_unit_words = 'square kilometers'
+    
+    # now we form the policy output table
     ELEVATION_M_PER_KM3_CONSUMPTION = 1.948
     policies_df = pd.DataFrame(
         columns = ['Policy',
@@ -450,6 +468,8 @@ def CreateWrittenPolicyEffects(applied_policies: list[Policy], unit_designation:
             f'Approximate Effect on Elevation ({elevation_unit})',
             f'Cost effectivness ({volume_unit}/million $)']
     )
+
+    
     for policy in applied_policies:
 
         # if the policy has no impact, it is skipped
@@ -485,62 +505,31 @@ def CreateWrittenPolicyEffects(applied_policies: list[Policy], unit_designation:
         policies_df[f'Cost effectivness ({volume_unit}/million $)'] *= ACRE_FEET_PER_KM3
     
     policies_df = policies_df.round(2)
-
     total_water_savings = policies_df.at['Total: ', f'Yearly Water Savings ({volume_unit})']
     total_policy_cost_millions = policies_df.at['Total: ','Cost over 30 years (millions)']
-    
+    if np.isnan(total_water_savings):
+        total_water_savings = 0
+        total_policy_cost_millions = 0
+
     policy_table = dash_table.DataTable(policies_df.to_dict('records'),[{"name": i, "id": i} for i in policies_df.columns])
-
-    return html.Div(
-        id='policy-effects-output',
-        children=[
-            html.P(f'The selected policies will reduce water consumption by {total_water_savings} {volume_unit}/yr and cost ${total_policy_cost_millions} million/yr'),
-            html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed policy breakdown'),
-            html.Div(id='policy-table',children=policy_table, style={'display': 'none'})
-        ]
-    )
-
-def CreateWrittenLakeEffects(lr_elevation: float, bath: pd.DataFrame, unit_designation: str) -> html.Div:
-    MI2_PER_KM2 = 0.386102
-    AVERAGE_SINCE_1847 = 1282.30
-
-    historical_average_sa = bath.at[AVERAGE_SINCE_1847, 'Surface Area']
-    predicted_average_sa = bath.at[lr_elevation, 'Surface Area']
-    change_in_sa = predicted_average_sa - historical_average_sa
-    percent_change_sa = 100 * change_in_sa / historical_average_sa
-
-    if change_in_sa > 0:
-        words = ['less', 'decrease']
-    else:
-        words = ['more','increase']
-    
-    if unit_designation == 'imperial':
-        volume_unit = 'AF'
-        elevation_unit = 'ft'
-        area_unit = 'mi2'
-        area_unit_words = 'square miles'
-        change_in_sa *= MI2_PER_KM2
-    else:
-        volume_unit = 'km3'
-        elevation_unit = 'm'
-        area_unit = 'km2'
-        area_unit_words = 'square kilometers'
 
     li_list = []
 
-    # effects_df = pd.read_csv('data/effects.csv')
-    # effects_list = []
-    surface_area_effect = f'''Expose {-change_in_sa:.2f} {words[0]} {area_unit_words} of lakebed, a {-percent_change_sa:.0f}% {words[1]} compared with 
+    written_policy_effects = f'''The selected policies will reduce water consumption by {total_water_savings} {volume_unit}/yr and 
+                                cost ${total_policy_cost_millions} million/yr'''
+    li_list.append(html.Li(written_policy_effects))
+    surface_area_effect = f'''Expose {-change_in_sa:.2f} {area_unit_words} of lakebed, a {-percent_change_sa:.0f}% {words[1]} compared to 
                                 the average since 1847. This leads to a proportional change in toxic dust and shortened ski season'''
-    # effects_list.append(surface_area_effect)
-    
     li_list.append(html.Li(surface_area_effect))
     
     return html.Div(
         id='written-lake-effects-output', 
         children=[
-            html.P('Based on the selected policies, the long-run lake level will'),
-            html.Ul(children=li_list)
+        
+            html.P('The selected policies will result in the following effects: '),
+            html.Ul(children=li_list),
+            html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed policy breakdown'),
+            html.Div(id='policy-table',children=policy_table, style={'display': 'none'})
         ]      
     )
 
@@ -697,14 +686,7 @@ app.layout = html.Div([
             dcc.Loading(html.Div(id='lake-predicted-image', style={'max-width': '500px'}))
         ]
     ),
-    html.Div(
-        id='effects-div',
-        children = [
-            html.H2('Expected effects on the lake'),
-            html.Div(id='written-policy-effects'),
-            html.Div(id='written-lake-effects'),
-        ]
-    ),
+    html.Div(id='written-effects'),
     html.H2('Predicted effects based on policy choices:'),
     html.Div(
         id='about-the-policies',
@@ -726,8 +708,7 @@ def DrawSunburstAndSankey(unit):
 @app.callback(
     Output('output-graph','figure'),
     Output('lake-predicted-image','children'),
-    Output('written-policy-effects','children'),
-    Output('written-lake-effects','children'),
+    Output('written-effects','children'),
     Input('run-model-button', 'n_clicks'),
     State('policy-checklist','value'),
     State('rain-slider','value'),
@@ -814,11 +795,9 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
 
     lake_picture = RetrieveImage(lr_average_elevation)
 
-    written_policy_effects = CreateWrittenPolicyEffects(applied_policies, units)
+    written_effects = CreateWrittenEffects(lr_average_elevation, applied_policies, bath, units)
 
-    written_lake_effects = CreateWrittenLakeEffects(lr_average_elevation, bath, units)
-
-    return line_graph, lake_picture, written_policy_effects, written_lake_effects
+    return line_graph, lake_picture, written_effects
 
             # html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed polict breakdown'),
             # html.Div(id='policy-table',children=policy_table, style={'display': 'none'})
