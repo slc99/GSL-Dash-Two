@@ -109,6 +109,57 @@ class Policy:
                 slider_message = policy.get('Slider Message'),
             )
 
+class Effect:
+    all_effects = []
+
+    def __init__(self, description: str, lower_threshold: float, upper_threshold: float, cost_equation: str, units: str):
+        self.description = description
+        self.lower_threshold = lower_threshold
+        self.upper_threshold = upper_threshold
+        self.cost_equation = cost_equation
+        self.units = units
+        Effect.all_effects.append(self)
+
+    def cost_function(self, elevation_m: float, bath: pd.DataFrame) -> float:
+        if self.cost_equation == '':
+            return 0
+        MAX_SURFACE_AREA = 5574.65
+        exposed_km2 = MAX_SURFACE_AREA - bath.at[round(elevation_m,2), 'Surface Area']
+        return eval(self.cost_equation.split('=')[1])
+    
+    def filled_description(self, elevation: float, bath: pd.DataFrame) -> str:
+        cost = self.format_cost_to_print(self.cost_function(elevation, bath))
+        return self.description.format(cost=cost)
+    
+    @staticmethod
+    def format_cost_to_print(cost: float) -> str:
+        if cost > 1000000000:
+            word = 'billion'
+            cost /= 1000000000
+            return f'${cost:.1f} {word}'
+        elif cost > 1000000:
+            word = 'million'
+            cost /= 1000000            
+            return f'${cost:.1f} {word}'
+        elif cost > 1000:
+            return f'${round(cost/1000)},000'
+        else:
+            return f'${cost:.0f}'
+    
+    @classmethod
+    def instantiate_from_csv(cls, path:str):
+        with open(path, 'r') as f:
+            reader = csv.DictReader(f)
+            effects = list(reader)
+        for effect in effects:
+            Effect(
+                description = effect.get('effect_description'),
+                lower_threshold = float(effect.get('lower_m')),
+                upper_threshold = float(effect.get('upper_m')),
+                cost_equation = effect.get('cost_equation'),
+                units = effect.get('units')
+            )
+
 def LoadMonthlyStats(path: str) -> pd.DataFrame:
     '''
     Loads monthly statistics as a dataframe
@@ -277,7 +328,7 @@ def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
 def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lake: pd.DataFrame, units: str, rolling=60) -> px.scatter:
 
     MEAN_ELEVATION_BEFORE_1847 = 1282.3
-    trendline_y_points = [1281.7,1278.9]
+    # trendline_y_points = [1281.7,1278.9]
     METERS_TO_FEET = 3.28084
 
     avg_elevation = round(df_lake['Elevation'].mean(),2)
@@ -293,7 +344,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
         combined['Elevation'] *= METERS_TO_FEET
         MEAN_ELEVATION_BEFORE_1847 *= METERS_TO_FEET
         avg_elevation *= METERS_TO_FEET
-        trendline_y_points = [y * METERS_TO_FEET for y in trendline_y_points]
+        # trendline_y_points = [y * METERS_TO_FEET for y in trendline_y_points]
     else:
         elevation_unit = 'm'
 
@@ -329,12 +380,10 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
         lr_pos = 'top left'
         human_pos = 'top left'
 
-    fig.add_shape(
-        type='line',
-        x0='1847-01-01', y0=trendline_y_points[0], x1='2022-01-01', y1=trendline_y_points[1],
-        # dash='dot',
-        # color='MediumPurple',
-    )
+    # fig.add_shape(
+    #     type='line',
+    #     x0='1847-01-01', y0=trendline_y_points[0], x1='2022-01-01', y1=trendline_y_points[1],
+    # )
 
     fig.add_hline(y=MEAN_ELEVATION_BEFORE_1847, line_dash='dot',
                     annotation_text = f'Average Natural Level, {MEAN_ELEVATION_BEFORE_1847}{elevation_unit}',
@@ -443,9 +492,9 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     percent_change_sa = 100 * change_in_sa / historical_average_sa
 
     if change_in_sa > 0:
-        words = ['less', 'decrease']
+        words = ['less', 'a decrease','increase']
     else:
-        words = ['more','increase']
+        words = ['more','an increase','decrease']
     
     if unit_designation == 'imperial':
         volume_unit = 'AF'
@@ -469,25 +518,27 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
             f'Cost effectivness ({volume_unit}/million $)']
     )
 
-    
+    # this loop adds applied policies to the dataframe
     for policy in applied_policies:
-
-        # if the policy has no impact, it is skipped
         if (policy.delta == 0 and policy.affect_type == 'absolute') or (policy.delta == 1 and policy.affect_type == 'proportion'):
+            continue
+        
+        #this is a hotfix to prevent enviromental sliders from being listed as policies for the purpose of seeing policy effects.
+        if policy.affect_type == 'proportion':
             continue
 
         policy_features = [policy.title, policy.first_thirty_cost_in_millions]
 
-        # if policy effect is proportional, we need to find the absolute effect
-        if policy.affect_type == 'absolute':
-            policy_features.append(-policy.delta)
-        else:
-            policy_features.append(-policy.delta_absolute)
+        # # if policy effect is proportional, we need to find the absolute effect
+        # if policy.affect_type == 'absolute':
+        #     policy_features.append(-policy.delta)
+        # else:
+        #     policy_features.append(-policy.delta_absolute)
 
+        policy_features.append(-policy.delta)
         policy_effect_on_elevation = policy_features[2] * ELEVATION_M_PER_KM3_CONSUMPTION
         policy_features.append(policy_effect_on_elevation)
 
-        #if policy cost is zero, then we do not want to divide by zero
         if policy.first_thirty_cost_in_millions != 0:
             policy_cost_effectiveness = -policy.delta / policy.first_thirty_cost_in_millions
         else:
@@ -507,6 +558,7 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     policies_df = policies_df.round(2)
     total_water_savings = policies_df.at['Total: ', f'Yearly Water Savings ({volume_unit})']
     total_policy_cost_millions = policies_df.at['Total: ','Cost over 30 years (millions)']
+    
     if np.isnan(total_water_savings):
         total_water_savings = 0
         total_policy_cost_millions = 0
@@ -514,28 +566,41 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     policy_table = dash_table.DataTable(policies_df.to_dict('records'),[{"name": i, "id": i} for i in policies_df.columns])
 
     li_list = []
+    if total_water_savings != 0:
+        written_policy_effects = f'''The selected policies will {words[2]} water going into the lake by {abs(total_water_savings)} {volume_unit} per year and 
+                                    cost ${total_policy_cost_millions} million over then next thirty years.'''
+        li_list.append(html.Li(written_policy_effects))
 
-    written_policy_effects = f'''The selected policies will reduce water consumption by {total_water_savings} {volume_unit}/yr and 
-                                cost ${total_policy_cost_millions} million/yr'''
-    li_list.append(html.Li(written_policy_effects))
-    surface_area_effect = f'''Expose {-change_in_sa:.2f} {area_unit_words} of lakebed, a {-percent_change_sa:.0f}% {words[1]} compared to 
-                                the average since 1847. This leads to a proportional change in toxic dust and shortened ski season'''
+    surface_area_effect = f'''{-change_in_sa:.2f} {area_unit_words} of lakebed are exposed, {words[1]} of {-percent_change_sa:.0f}% compared to 
+                                the average since 1847.'''
     li_list.append(html.Li(surface_area_effect))
+
+    yearly_lake_level_cost = 0
+    for effect in Effect.all_effects:
+        if effect.lower_threshold < lr_elevation < effect.upper_threshold: 
+           li_list.append(html.Li(effect.filled_description(lr_elevation,bath)))
+           yearly_lake_level_cost += effect.cost_function(lr_elevation, bath)
     
+    li_list.insert(0, html.Li(f'''The effects of the lake's level predicted level will cost {Effect.format_cost_to_print(30 * yearly_lake_level_cost)} over the next 
+                                    thirty years, or {Effect.format_cost_to_print(yearly_lake_level_cost)} yearly.'''))
+
     return html.Div(
         id='written-lake-effects-output', 
         children=[
-        
             html.P('The selected policies will result in the following effects: '),
             html.Ul(children=li_list),
-            html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed policy breakdown'),
-            html.Div(id='policy-table',children=policy_table, style={'display': 'none'})
+            html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed policy of selected policies'),
+            html.Br(),
+            html.Div(id='policy-table',children=policy_table, style={'display': 'none',}),
+            # html.Button(id='show-effect-table-button', n_clicks=0, children='Show a detailed breakdown of the effects')
         ]      
     )
 
+
 Policy.instantiate_from_csv('data/policies.csv')
+Effect.instantiate_from_csv('data/elevation_effects.csv')
 monthly_stats = LoadMonthlyStats('data/monthly_stats.csv')
-bath = pd.read_csv('data/bath_df.csv', index_col=0)
+bath = pd.read_pickle('data/bath_pickle.pkl')
 lake = CreateLakeData('data/lake_df.csv', bath)
 
 slider_policy_list = []
@@ -632,7 +697,6 @@ app.layout = html.Div([
                 id = 'streamflow-slider',
                 min = -100,
                 max = 100,
-                value = 0,
                 marks = {
                     -100: '100% less streamflow (No streamflow)',
                     -50: '50% less streamflow',
@@ -640,6 +704,7 @@ app.layout = html.Div([
                     50: '50% more streamflow',
                     100: {'label':'100% more streamflow (Double streamflow)', 'style':{'right':'-200px',}},
                 },
+                value = -12,
                 tooltip={
                     'placement':'bottom'
                 }
@@ -686,14 +751,13 @@ app.layout = html.Div([
             dcc.Loading(html.Div(id='lake-predicted-image', style={'max-width': '500px'}))
         ]
     ),
-    html.Div(id='written-effects'),
-    html.H2('Predicted effects based on policy choices:'),
     html.Div(
-        id='about-the-policies',
-        children=[
-        html.P('Here is some policy text!')
+        id='written-effects-container',
+        children = [
+            html.H2('Predicted effects based on policy choices:'),
+            dcc.Loading(html.Div(id='written-effects')),
         ]
-    )
+    ),
 ])
 
 
@@ -734,7 +798,7 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     #this is a list of policy objects that are applied to the 'monthly_stats' dataframe
     applied_policies = []
 
-    policy_slider_values = [slider_0,slider_1,slider_2,slider_3,slider_4,slider_5,slider_6,slider_7,slider_8]
+    policy_slider_values = [slider_0, slider_1, slider_2, slider_3, slider_4, slider_5, slider_6, slider_7, slider_8]
     i=0
     for selected_cost in policy_slider_values:
         max_consumption_change = Policy.slider_policies[i].delta
