@@ -9,12 +9,13 @@ from dateutil.relativedelta import relativedelta
 import plotly.express as px
 from dash_extensions import BeforeAfter
 import plotly.graph_objects as go
+import pickle
 
 class DataSchema:
     streamflow_after_consumption = 'streamflow_after_consumption'
     groundwater = 'groundwater'
-    evap_rate = 'evap_rate'
-    percip = 'percip'
+    evap_km3_per_km2 = 'evap_km3_per_km2'
+    percip_km3_per_km2 = 'percip_km3_per_km2'
     total_consumptive_use = 'total_consumptive_use'
     streamflow_before_consumption = 'streamflow_before_consumption'
     agriculture_consumption = 'agriculture_consumption'
@@ -22,6 +23,12 @@ class DataSchema:
     mineral_consumption =  'mineral_consumption'
     impounded_wetland_consumption = 'impounded_wetland_consumption'
     reservoir_consumption =  'reservoir_consumption'
+    water_imports = 'water_imports'
+    utah_population_millions = 'utah_population_millions'
+    avg_elevation = 'avg_elevation'
+    avg_temp_c = 'avg_temp_c'
+    avg_sa = 'avg_sa'
+    avg_volume = 'avg_volume'
 
 class Policy:
 
@@ -31,9 +38,6 @@ class Policy:
     def __init__(self, title: str, description: str, affected: str, 
         affect_type: str, delta: float, initial_cost = 0, cost_per_year = 0, 
         slider = '', slider_message = '', first_thirty_cost_in_millions = -1):
-        
-        # assert affect_type is 'proportion' or 'absolute', f'Affect type: {affect_type}. Must be proportion or absolute.'
-        # assert affected in DataSchema.__dict__, f'Affected: {affected} not in {DataSchema.__dict__}'
 
         if affect_type == 'proportion':
             assert delta >= 0, f'Delta: {delta}. Delta must be above 0 '
@@ -55,38 +59,71 @@ class Policy:
         self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
         self.id_name = title.replace(' ','-').lower()
 
-        self.checklist_component = dcc.Checklist(
-                id=self.id_name + '-checklist',
-                options = [{'label': self.checklist_label, 'value': self.title}],
-                value = [],
-                labelStyle={'display': 'block','text-indent': '-1.25em'},
-                style={'position':'relative','left': '1em'}
-            )
-        self.slider_component = html.Span(
-                id=self.id_name + '-display',
-                children = [
-                    html.I(self.slider_message,style={'position':'relative','left': '1em'}),
-                    html.Br(),
-                    dcc.Slider(
-                    id = self.id_name + '-slider',
-                    min = 0,
-                    max = self.first_thirty_cost_in_millions,
-                    value = 0,
-                    marks = {
-                        0: '$0', 
-                        int(self.first_thirty_cost_in_millions/2): f'${self.first_thirty_cost_in_millions/2} million', 
-                        int(self.first_thirty_cost_in_millions): {'label':f'${self.first_thirty_cost_in_millions} million', 'style':{'right':'-200px'}}
-                    },
-                    tooltip={'placement':'bottom'}), 
-                ], 
-            style={'display': 'none'}
-        )
+
+        # self.checklist_component = dcc.Checklist(
+        #         id=self.id_name + '-checklist',
+        #         options = [{'label': self.checklist_label, 'value': self.title}],
+        #         value = [],
+        #         labelStyle={'display': 'block','text-indent': '-1.25em'},
+        #         style={'position':'relative','left': '1em'}
+        #     )
+
+        # self.slider_component = html.Span(
+        #         id=self.id_name + '-display',
+        #         children = [
+        #             html.I(self.slider_message,style={'position':'relative','left': '1em'}),
+        #             html.Br(),
+        #             dcc.Slider(
+        #             id = self.id_name + '-slider',
+        #             min = 0,
+        #             max = self.first_thirty_cost_in_millions,
+        #             value = 0,
+        #             marks = {
+        #                 0: '$0', 
+        #                 int(self.first_thirty_cost_in_millions/2): f'${self.first_thirty_cost_in_millions/2} million', 
+        #                 int(self.first_thirty_cost_in_millions): {'label':f'${self.first_thirty_cost_in_millions} million', 'style':{'right':'-200px'}}
+        #             },
+        #             tooltip={'placement':'bottom'}), 
+        #         ], 
+        #     style={'display': 'none'}
+        # )
 
         Policy.all_policies.append(self)
 
         if self.slider:
             Policy.slider_policies.append(self)
 
+
+    def create_checklist_component(self):
+        id_name = self.title.replace(' ','-').lower()
+        return dcc.Checklist(
+            id=id_name + '-checklist',
+            options = [{'label': self.checklist_label, 'value': self.title}],
+            value = [],
+            labelStyle={'display': 'block','text-indent': '-1.25em'},
+            style={'position':'relative','left': '1em'}
+        )
+    
+    def create_slider_component(self):
+        return html.Span(
+            id=self.id_name + '-display',
+            children = [
+                html.I(self.slider_message,style={'position':'relative','left': '1em'}),
+                html.Br(),
+                dcc.Slider(
+                id = self.id_name + '-slider',
+                min = 0,
+                max = self.first_thirty_cost_in_millions,
+                value = 0,
+                marks = {
+                    0: '$0', 
+                    int(self.first_thirty_cost_in_millions/2): f'${self.first_thirty_cost_in_millions/2} million', 
+                    int(self.first_thirty_cost_in_millions): {'label':f'${self.first_thirty_cost_in_millions} million', 'style':{'right':'-200px'}}
+                },
+                tooltip={'placement':'bottom'}), 
+            ], 
+        style={'display': 'none'}
+        )   
 
     def __repr__(self):
         return f'{self.title}, {self.description}, {self.affected}, {self.affect_type}, {self.delta}'
@@ -160,157 +197,91 @@ class Effect:
                 units = effect.get('units')
             )
 
-def LoadMonthlyStats(path: str) -> pd.DataFrame:
+def LoadYearlyStats(path: str) -> dict:
     '''
-    Loads monthly statistics as a dataframe
+    Loads yearly statsitics as a dictionary
     '''
-    data = pd.read_csv(path,index_col=0,)
-    data.rename(columns={
-        'Streamflow': DataSchema.streamflow_after_consumption,
-        'Groundwater': DataSchema.groundwater,
-        'Evap (km3/km2)': DataSchema.evap_rate,
-        'Percipitation (mm)': DataSchema.percip, 
-        'Consumptive use': DataSchema.total_consumptive_use,
-        'Streamflow without consumption': DataSchema.streamflow_before_consumption,
-        'agriculture consumption': DataSchema.agriculture_consumption,
-        'municipal consumption': DataSchema.municipal_consumption,
-        'reservoir consumption': DataSchema.reservoir_consumption,
-        'mineral consumption': DataSchema.mineral_consumption,
-        'wetland consumption': DataSchema.impounded_wetland_consumption,
-    },inplace=True)
-    data[DataSchema.percip] /= 1000000
+    data = {}
+    with open(path,'rb') as handle:
+        unconverted_data = pickle.load(handle)
+
+    data[DataSchema.streamflow_after_consumption] = unconverted_data['streamflow_after_consumption']
+    data[DataSchema.groundwater] = unconverted_data['groundwater']
+    data[DataSchema.percip_km3_per_km2] = unconverted_data['percip_km3_per_km2']
+    data[DataSchema.evap_km3_per_km2] = unconverted_data['evap_km3_per_km2']
+    data[DataSchema.streamflow_before_consumption] = unconverted_data['streamflow_before_consumption']
+    data[DataSchema.avg_temp_c] = unconverted_data['avg_temp_c']
+    data[DataSchema.municipal_consumption] = unconverted_data['municipal_consumption']
+    data[DataSchema.reservoir_consumption] = unconverted_data['reservoir_consumption']
+    data[DataSchema.mineral_consumption] = unconverted_data['mineral_consumption']
+    data[DataSchema.impounded_wetland_consumption] = unconverted_data['wetland_consumption']
+    data[DataSchema.water_imports] = unconverted_data['water_imports']
+    data[DataSchema.total_consumptive_use] = unconverted_data['net_consumption']
+    data[DataSchema.agriculture_consumption] = unconverted_data['agriculture_consumption']
+
+    
     return data
 
-def AdjustMonthlyStats(policies: list, monthly_stats: pd.DataFrame) -> pd.DataFrame:
+def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
     '''
-    Adjusts the monthly variables by the given policies
+    Adjusts the yearly variables by the given policies
     '''
-    adjusted_monthly = monthly_stats.copy(deep=True)  
+    adjusted_yearly = yearly_stats.copy()  
 
     for policy in policies:
         if policy.affect_type == 'absolute':
-            adjusted_monthly[policy.affected] += (policy.delta /12)
-            adjusted_monthly[policy.affected].clip(0,inplace=True)
+            adjusted_yearly[policy.affected] += policy.delta
+            if adjusted_yearly[policy.affected] < 0:
+                adjusted_yearly[policy.affected] = 0
     for policy in policies:
         if policy.affect_type == 'proportion':
-            new_adjusted = adjusted_monthly[policy.affected] * policy.delta
-            policy.delta_absolute = sum(adjusted_monthly[policy.affected]) - sum(new_adjusted)
-            adjusted_monthly[policy.affected] = new_adjusted
-            # adjusted_monthly[policy.affected] *= policy.delta
+            new_adjusted = adjusted_yearly[policy.affected] * policy.delta
+            policy.delta_absolute = adjusted_yearly[policy.affected] - new_adjusted
+            adjusted_yearly[policy.affected] = new_adjusted
     
-    adjusted_monthly[DataSchema.total_consumptive_use] = (
-        adjusted_monthly[DataSchema.agriculture_consumption] 
-        + adjusted_monthly[DataSchema.municipal_consumption]
-        + adjusted_monthly[DataSchema.reservoir_consumption]
-        + adjusted_monthly[DataSchema.mineral_consumption]
-        + adjusted_monthly[DataSchema.impounded_wetland_consumption]
+    adjusted_yearly[DataSchema.total_consumptive_use] = (
+        adjusted_yearly[DataSchema.agriculture_consumption] 
+        + adjusted_yearly[DataSchema.municipal_consumption]
+        + adjusted_yearly[DataSchema.reservoir_consumption]
+        + adjusted_yearly[DataSchema.mineral_consumption]
+        + adjusted_yearly[DataSchema.impounded_wetland_consumption]
     )
 
     for policy in policies:
         if policy.affected == DataSchema.total_consumptive_use:
             if policy.affect_type == 'absolute':
-                adjusted_monthly[policy.affected] += (policy.delta / 12)
-                adjusted_monthly[policy.affected].clip(0,inplace=True)
+                adjusted_yearly[policy.affected] += policy.delta
+                if adjusted_yearly[policy.affected] < 0:
+                    adjusted_yearly[policy.affected] = 0
             if policy.affect_type == 'proportion':
-                new_adjusted = adjusted_monthly[policy.affected] * policy.delta
-                policy.delta_absolute = sum(adjusted_monthly[policy.affected]) - sum(new_adjusted)
-                adjusted_monthly[policy.affected] = new_adjusted
-                # adjusted_monthly[policy.affected] *= policy.delta
+                new_adjusted = adjusted_yearly[policy.affected] * policy.delta
+                policy.delta_absolute = adjusted_yearly[policy.affected] - new_adjusted
+                adjusted_yearly[policy.affected] = new_adjusted
 
-    adjusted_monthly[DataSchema.streamflow_after_consumption] = (
-        adjusted_monthly[DataSchema.streamflow_before_consumption] - adjusted_monthly[DataSchema.total_consumptive_use])
+    adjusted_yearly[DataSchema.streamflow_after_consumption] = (adjusted_yearly[DataSchema.streamflow_before_consumption] 
+                                                                - adjusted_yearly[DataSchema.total_consumptive_use])
     
-    return adjusted_monthly
+    return adjusted_yearly
 
-def GetUSGSSiteData(site_num: str, start_date: str, end_date: str, service='dv') -> pd.DataFrame:
-    '''
-    Uses dataretrieval.nwis to load the record of the given site
-    '''
-    df = nwis.get_record(sites=site_num, service=service ,start=start_date, end=end_date)
-    df.reset_index(inplace=True)
-    return df
-
-def CreateLakeData(path: str, bath_df: pd.DataFrame) -> pd.DataFrame:
-    '''
-    This function loads the historic data from the saved cvs and then updates with new data if required
-    '''
-    today = date.today().strftime("%Y-%m-%d")
-
-    saved_data = pd.read_csv(path, index_col=0)
-    last_saved_day = saved_data.at[len(saved_data)-1, 'datetime']
-
-    if saved_data.at[len(saved_data)-1, 'datetime'].split('-')[1] == today.split('-')[1]:
-        return saved_data
-
-    today = date.today().strftime("%Y-%m-%d")
-    FOOT_TO_METER = 0.3048
-    
-    new_data = GetUSGSSiteData('10010024',last_saved_day,today)
-
-    new_data['YYYY-MM'] = new_data['datetime'].dt.year.astype(str) + '-' + new_data['datetime'].dt.month.astype(str) #the better way
-    new_data = new_data.groupby(new_data['YYYY-MM']).mean(numeric_only=True)
-    new_data = new_data.iloc[1:] 
-
-    new_data.rename(columns={'62614_Mean':'Elevation'},inplace=True)
-    new_data['Elevation'] *= FOOT_TO_METER
-    new_data.reset_index(inplace=True)
-    new_data['datetime'] = pd.to_datetime(new_data['YYYY-MM'])
-
-    for index, row in new_data.iterrows():
-        round_e = round(new_data.at[index,'Elevation'], 2)
-        new_data.at[index,'Surface Area'] = bath_df.at[round_e,'Surface Area']
-        new_data.at[index,'Volume'] = bath_df.at[round_e,'Volume']
-
-    combined = pd.concat([saved_data,new_data],ignore_index=True)
-    combined.reset_index(inplace=True,drop=True)
-
-    return combined
-
-def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
-                    bath_df: pd.DataFrame, lake_df: pd.DataFrame, start_date='',
-                    weather=False):
+def GSLPredictor(years_forward: int, yearly_stats: dict,
+                    bath_df: pd.DataFrame, lake_df: pd.DataFrame):
     
     MAX_VOLUME = 39.896064
-    
-    if len(start_date) == 0:
-        yyyy_mm_date = date.today().strftime("%Y-%m")  
-    else:
-        yyyy_mm_date = start_date
         
-    cur_date = pd.to_datetime(yyyy_mm_date)
-
-    months_forward = 12 * years_forward
+    cur_date = pd.to_datetime(date.today().strftime("%Y"))
+    start_year = int(str(cur_date).split('-')[0])
     
-    elevation = round(lake_df.set_index('YYYY-MM').at[yyyy_mm_date,'Elevation'], 2)
-    predictions = pd.DataFrame(columns=['datetime','Elevation Prediction','YYYY-MM'])
+    elevation = round(lake_df.at[start_year,DataSchema.avg_elevation], 2)
+    predictions = pd.DataFrame(columns=['datetime','Elevation Prediction','YYYY'])
     
-    weather_factor = 0
-    lr_weather_counter = 0
-    
-    for i in range(months_forward):
+    for i in range(years_forward):
         surface_area = bath_df.at[elevation,'Surface Area']
         volume = bath_df.at[elevation,'Volume']
-        month_index = (i%12)
         
-        lost_evap = surface_area * monthly_stats.at[month_index,DataSchema.evap_rate]
-        gained_rain = surface_area * monthly_stats.at[month_index,DataSchema.percip]
-        gained_stream = monthly_stats.at[month_index,DataSchema.streamflow_after_consumption]
-        
-        if weather:
-            if lr_weather_counter == 0:
-                lr_weather_counter = np.random.randint(60,120)
-                lr_weather_factor = np.random.normal(scale=0.15)
-                
-            if month_index == 0:
-                weather_factor = np.random.normal(scale=0.35)
-            
-            lr_weather_counter -= 1
-            
-            gained_rain *= 1 + (weather_factor + lr_weather_factor)
-            gained_stream *= 1 + (weather_factor +  lr_weather_factor)
-        
-        GAINED_GROUND_WATER_MONTHLY = 0.00775
-        net = gained_rain + gained_stream + GAINED_GROUND_WATER_MONTHLY - lost_evap
+        lost_evap = surface_area * yearly_stats[DataSchema.evap_km3_per_km2]
+        gained_rain = surface_area * yearly_stats[DataSchema.percip_km3_per_km2]
+        gained_stream = yearly_stats[DataSchema.streamflow_after_consumption]
+        net = gained_rain + gained_stream + yearly_stats[DataSchema.groundwater] - lost_evap
         
         volume += net
         
@@ -319,81 +290,72 @@ def GSLPredictor(years_forward: int, monthly_stats: pd.DataFrame,
         else:
             elevation = bath_df.index[(bath_df['Volume']-volume).abs().argsort()][:1][0]
             
-        cur_date += relativedelta(months=1)
-        
-        predictions.loc[len(predictions.index)] = [cur_date,elevation,cur_date.strftime("%Y-%m")]
+        cur_date += relativedelta(years=1)
+        predictions.loc[len(predictions.index)] = [cur_date,elevation,cur_date.strftime("%Y")]
         
     return predictions
 
-def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lake: pd.DataFrame, units: str, rolling=60) -> px.scatter:
+def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
+    
+    prediction['YYYY'] = prediction['YYYY'].astype('int64')
+    adj_pred = prediction.set_index('YYYY')
 
     MEAN_ELEVATION_BEFORE_1847 = 1282.3
-    # trendline_y_points = [1281.7,1278.9]
     METERS_TO_FEET = 3.28084
+    historic_avg_elevation = round(lake[DataSchema.avg_elevation].mean(),2)
 
-    avg_elevation = round(df_lake['Elevation'].mean(),2)
-    combined = pd.concat([df_lake,prediction],ignore_index=True)
-
-    temp = pd.concat([combined.iloc[len(df_lake)-rolling:len(df_lake)]['Elevation'],combined.iloc[len(df_lake):]['Elevation Prediction']])
+    combined = pd.concat([lake[[DataSchema.avg_elevation]],adj_pred])
+    temp = pd.concat([combined.iloc[len(lake)-rolling:len(lake)][DataSchema.avg_elevation],combined.iloc[len(lake):]['Elevation Prediction']])
     combined['Elevation Prediction'] = temp
+    combined['Year'] = combined.index
 
     if units == 'imperial':
         elevation_unit = 'ft'
         combined['Elevation Prediction'] *= METERS_TO_FEET
         lr_average_elevaton *= METERS_TO_FEET
-        combined['Elevation'] *= METERS_TO_FEET
+        combined[DataSchema.avg_elevation] *= METERS_TO_FEET
         MEAN_ELEVATION_BEFORE_1847 *= METERS_TO_FEET
-        avg_elevation *= METERS_TO_FEET
+        historic_avg_elevation *= METERS_TO_FEET
         # trendline_y_points = [y * METERS_TO_FEET for y in trendline_y_points]
     else:
         elevation_unit = 'm'
 
     colors = ['blue','red']
 
-    combined['datetime'] = pd.to_datetime(combined['datetime'])
+    # combined['datetime'] = pd.to_datetime(combined.index)
 
-    fig = px.scatter(combined, y=['Elevation','Elevation Prediction'],
-                        x='datetime', trendline='rolling',
+    fig = px.scatter(combined, y=[DataSchema.avg_elevation,'Elevation Prediction'],
+                        x='Year',
+                        trendline='rolling',
                         trendline_options=dict(window=rolling),
                         color_discrete_sequence=colors,
                         labels = {
                             'value':f'Lake Elevation ({elevation_unit})',
-                            'datetime':'Year'
+                            # 'datetime':'Year'
                         },
                     )
 
-    start_date = "1870-01-01"
-    end_date = combined.at[len(combined)-1, "datetime"]
-    fig.update_xaxes(type='date', range=[start_date, end_date])
+
+    start_date = 1870
+    end_date = combined[-1:].index[0]
+    fig.update_layout(xaxis_range=[start_date,end_date])
 
     #only show trendlines
     fig.data = [t for t in fig.data if t.mode == 'lines']
 
-    #assign label positions
-    if (0 < (MEAN_ELEVATION_BEFORE_1847 - lr_average_elevaton) < 0.4) or (0 < (df_lake['Elevation'].mean() - lr_average_elevaton) < 0.4):
-        lr_pos = 'bottom left'
-        human_pos = 'top left'
-    elif 0 < (lr_average_elevaton - df_lake['Elevation'].mean()) < 0.4:
-        lr_pos = 'top left'
-        human_pos = 'bottom left'
-    else:
-        lr_pos = 'top left'
-        human_pos = 'top left'
 
-    # fig.add_shape(
-    #     type='line',
-    #     x0='1847-01-01', y0=trendline_y_points[0], x1='2022-01-01', y1=trendline_y_points[1],
-    # )
+    lr_pos = 'top left'
+    human_pos = 'top left'
 
     fig.add_hline(y=MEAN_ELEVATION_BEFORE_1847, line_dash='dot',
-                    annotation_text = f'Average Natural Level, {MEAN_ELEVATION_BEFORE_1847}{elevation_unit}',
+                    annotation_text = f'Average Natural Level, {MEAN_ELEVATION_BEFORE_1847:.2f}{elevation_unit}',
                     annotation_position = 'top left',
                     annotation_font_size = 10,
                     annotation_font_color = 'black',
                     )
 
-    fig.add_hline(y=avg_elevation, line_dash='dot',
-                annotation_text = f'Average Since 1847, {avg_elevation}{elevation_unit}',
+    fig.add_hline(y=historic_avg_elevation, line_dash='dot',
+                annotation_text = f'Average Since 1847, {historic_avg_elevation:.2f}{elevation_unit}',
                 annotation_position = human_pos,
                 annotation_font_size = 10,
                 annotation_font_color = colors[0],
@@ -402,7 +364,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, df_lak
 
     fig.add_hline(y=lr_average_elevaton, 
                     line_dash='dot',
-                    annotation_text = f'Long-term Policy Average, {lr_average_elevaton}{elevation_unit}',
+                    annotation_text = f'Long-term Policy Average, {lr_average_elevaton:.2f}{elevation_unit}',
                     annotation_position = lr_pos,
                     annotation_font_size = 10,
                     annotation_font_color = colors[1],
@@ -581,8 +543,8 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
            li_list.append(html.Li(effect.filled_description(lr_elevation,bath)))
            yearly_lake_level_cost += effect.cost_function(lr_elevation, bath)
     
-    li_list.insert(0, html.Li(f'''The effects of the lake's level predicted level will cost {Effect.format_cost_to_print(30 * yearly_lake_level_cost)} over the next 
-                                    thirty years, or {Effect.format_cost_to_print(yearly_lake_level_cost)} yearly.'''))
+    li_list.insert(0, html.Li(f'''The effects of the lake's predicted level will cost {Effect.format_cost_to_print(30 * yearly_lake_level_cost)} over the next 
+                                    thirty years, equivalent to {Effect.format_cost_to_print(yearly_lake_level_cost)} yearly.'''))
 
     return html.Div(
         id='written-lake-effects-output', 
@@ -596,17 +558,33 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
         ]      
     )
 
+def TempToEvap(temperature_delta: float, unit: str) -> Policy:
+    C_PER_F = 5/9
+    EVAP_CHANGE_PER_C = 0.0000959
+
+    if unit == 'imperial':
+        temperature_delta *= C_PER_F
+
+    return Policy(
+        title='Temperature Effect on Evaporation',
+        description='Temperature effects the lake\'s rate of evaporation',
+        affected=DataSchema.evap_km3_per_km2,
+        affect_type='absolute',
+        delta=(EVAP_CHANGE_PER_C * temperature_delta)
+        )
+
 
 Policy.instantiate_from_csv('data/policies.csv')
 Effect.instantiate_from_csv('data/elevation_effects.csv')
-monthly_stats = LoadMonthlyStats('data/monthly_stats.csv')
+yearly_stats = LoadYearlyStats('data/yearly_stats.pkl')
 bath = pd.read_pickle('data/bath_pickle.pkl')
-lake = CreateLakeData('data/lake_df.csv', bath)
+full_lake = pd.read_pickle('data/yearly_lake.pkl')
+lake = full_lake[[DataSchema.avg_elevation,DataSchema.avg_sa,DataSchema.avg_volume]]
 
 slider_policy_list = []
 for policy in Policy.slider_policies:
-    slider_policy_list.append(policy.checklist_component)
-    slider_policy_list.append(policy.slider_component)
+    slider_policy_list.append(policy.create_checklist_component())
+    slider_policy_list.append(policy.create_slider_component())
 
 
 app = Dash(__name__)
@@ -614,13 +592,13 @@ app = Dash(__name__)
 
 
 app.layout = html.Div([
-    html.Div(
-        id='before-after-parent',
-        children=[
-            BeforeAfter(before={'src':'assets/gsl_before.jpg'}, after={'src':'assets/gsl_after.jpg'}, hover=False, id='before-after-image'),
-            html.I('Click and drag to see differences in water level from 1986 to 2022')
-        ]
-    ),
+    # html.Div(
+    #     id='before-after-parent',
+    #     children=[
+    #         BeforeAfter(before={'src':'assets/gsl_before.jpg'}, after={'src':'assets/gsl_after.jpg'}, hover=False, id='before-after-image'),
+    #         html.I('Click and drag to see differences in water level from 1986 to 2022')
+    #     ]
+    # ),
     dcc.Graph(id='sankey-diagram'),
     dcc.Graph(id='consumptive-use-sunburst'),
     html.Div(children=[html.H2('Policy Options',style={'margin-bottom':'0em'}),html.A('Sources',href='#about-the-policies')],style={'margin-bottom':'1em'}),
@@ -658,7 +636,7 @@ app.layout = html.Div([
                 style={'position':'relative','left': '1em'}
             ),
             html.Br(),
-            html.Strong('Adjust direct rainfall'),
+            html.Strong('Adjust rainfall directly onto the lake\'s surface'),
             dcc.Slider(
                 id = 'rain-slider',
                 min = -100,
@@ -692,7 +670,7 @@ app.layout = html.Div([
                     'placement':'bottom'
                 }
             ),
-            html.Strong('Adjust pre-consumption streamflow'),
+            html.Strong('Adjust river flow before human consumption'),
             dcc.Slider(
                 id = 'streamflow-slider',
                 min = -100,
@@ -730,13 +708,28 @@ app.layout = html.Div([
                 ],
             style={'display': 'none'}
             ),
-
+            html.Span(
+                id = 'temperature-slider-parent',
+                children = [
+                html.Strong('Adjust average temperature'),
+                dcc.Slider(
+                    id = 'temperature-slider',
+                    min = -5,
+                    max = 5,
+                    value = 0,
+                    step = 0.1,
+                    #marks set by callback
+                    tooltip={'placement':'bottom'},
+                ),
+                ],
+            style={'display': 'block'}
+            ),
         ]
     ),
 
     dcc.Dropdown(id = 'unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'imperial'),
     html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
-    html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection'),
+    html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection',style={'display':'none'}),
     html.Div(
         id='line-graph',
         children=[
@@ -760,14 +753,30 @@ app.layout = html.Div([
     ),
 ])
 
-
 @app.callback(
     Output('consumptive-use-sunburst', 'figure'),
     Output('sankey-diagram', 'figure'),
+    Output('temperature-slider','min'),
+    Output('temperature-slider','max'),
+    Output('temperature-slider','marks'),
+    Output('temperature-slider','value'),
     Input('unit-dropdown','value'),
+    State('temperature-slider','value')
 )
-def DrawSunburstAndSankey(unit):
-    return CreateConsumptiveUseSunburst(unit), CreateSankeyDiagram(unit)
+def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
+    F_PER_C = 9/5
+    if unit == 'imperial':
+        min = -9
+        max = 9
+        marks = {-9: '9\u00B0 f cooler',-4.5: '4.5\u00B0 f cooler',0: 'No change',4.5:'4.5\u00B0 f warmer', 9: {'label':'9\u00B0 f warmer', 'style':{'right':'-200px'}}}
+        value = cur_temp_value * F_PER_C
+    else:
+        min = -5
+        max = 5
+        marks = {-5: '5\u00B0 C cooler',-2.5: '2.5\u00B0 C cooler',0: 'No change', 2.5:'2.5\u00B0 C warmer', 5: {'label':'5\u00B0 C warmer', 'style':{'right':'-200px'}}}
+        value = cur_temp_value / F_PER_C
+    
+    return CreateConsumptiveUseSunburst(unit), CreateSankeyDiagram(unit), min, max, marks, value
 
 @app.callback(
     Output('output-graph','figure'),
@@ -779,6 +788,7 @@ def DrawSunburstAndSankey(unit):
     State('human-consumption-slider','value'),
     State('years-forward-slider','value'),
     State('streamflow-slider','value'),
+    State('temperature-slider','value'),
     State('weather-checklist','value'),
     State('unit-dropdown','value'),
     State(Policy.slider_policies[0].id_name + '-slider','value'),
@@ -792,8 +802,9 @@ def DrawSunburstAndSankey(unit):
     State(Policy.slider_policies[8].id_name + '-slider','value'),
     # prevent_initial_call=True
 )
-def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, weather: list, units: str,
-    slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, slider_7: float, slider_8: float,) -> list:
+def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, temperature_delta: float, weather: list, 
+    units: str, slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, 
+    slider_7: float, slider_8: float,) -> list:
 
     #this is a list of policy objects that are applied to the 'monthly_stats' dataframe
     applied_policies = []
@@ -830,7 +841,7 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
 
 
     rain_delta = (rain_delta+100) / 100
-    applied_policies.append(Policy('Rain Adjustment Slider','n/a',DataSchema.percip,'proportion',delta=rain_delta))
+    applied_policies.append(Policy('Rain Adjustment Slider','n/a',DataSchema.percip_km3_per_km2,'proportion',delta=rain_delta))
 
     consumption_delta = (consumption_delta + 100) / 100
     applied_policies.append(Policy('Consumption Ajustment Slider','n/a',DataSchema.total_consumptive_use,'proportion',delta=consumption_delta))
@@ -838,21 +849,21 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     streamflow_delta = (streamflow_delta + 100) / 100
     applied_policies.append(Policy('Streamflow Adjustment Slider','n/a',DataSchema.streamflow_before_consumption,'proportion',delta=streamflow_delta))
 
+    applied_policies.append(TempToEvap(temperature_delta, units))
+
     #adjust monthly stats based on the selected policies
-    adjusted_monthly_stats = AdjustMonthlyStats(applied_policies, monthly_stats)
+    adjusted_yearly_stats = AdjustYearlyStats(applied_policies, yearly_stats)
 
     #run the model based on the adjusted monthly stats
-    prediction = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=weather)
+    prediction = GSLPredictor(years_forward, adjusted_yearly_stats, bath, lake)
 
     #long run average is based on the average of the last year. If weather is selected, the model is ran again without weather to find the true lr average
     MONTHS_BEFORE_LONG_RUN_AVG = 108
     if not weather:
-        # lr_average_elevation = round(prediction['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
-        lr_average_elevation = round(prediction.tail(12)['Elevation Prediction'].mean(), 2)
+        lr_average_elevation = round(prediction.iloc[-1]['Elevation Prediction'], 2)
     else:
-        temp_prediction_weather = GSLPredictor(years_forward, adjusted_monthly_stats, bath, lake, weather=False)
-        # lr_average_elevation = round(temp_prediction_weather['Elevation Prediction'].loc[MONTHS_BEFORE_LONG_RUN_AVG:].mean(),2)
-        lr_average_elevation = round(temp_prediction_weather.tail(12)['Elevation Prediction'].mean(), 2)
+        temp_prediction_weather = GSLPredictor(years_forward, adjusted_yearly_stats, bath, lake)
+        lr_average_elevation = round(prediction.iloc[-1]['Elevation Prediction'], 2)
 
     # units cosmetically change graph
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake, units)
@@ -863,8 +874,7 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
 
     return line_graph, lake_picture, written_effects
 
-            # html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed polict breakdown'),
-            # html.Div(id='policy-table',children=policy_table, style={'display': 'none'})
+
 @app.callback(
     Output('policy-table','style'),
     Input('show-policy-table-button','n_clicks')
