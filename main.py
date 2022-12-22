@@ -55,44 +55,18 @@ class Policy:
             self.first_thirty_cost_in_millions = int((initial_cost + (cost_per_year * 30))/1000000)
         else:
             self.first_thirty_cost_in_millions = first_thirty_cost_in_millions
-
         self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
         self.id_name = title.replace(' ','-').lower()
 
-
-        # self.checklist_component = dcc.Checklist(
-        #         id=self.id_name + '-checklist',
-        #         options = [{'label': self.checklist_label, 'value': self.title}],
-        #         value = [],
-        #         labelStyle={'display': 'block','text-indent': '-1.25em'},
-        #         style={'position':'relative','left': '1em'}
-        #     )
-
-        # self.slider_component = html.Span(
-        #         id=self.id_name + '-display',
-        #         children = [
-        #             html.I(self.slider_message,style={'position':'relative','left': '1em'}),
-        #             html.Br(),
-        #             dcc.Slider(
-        #             id = self.id_name + '-slider',
-        #             min = 0,
-        #             max = self.first_thirty_cost_in_millions,
-        #             value = 0,
-        #             marks = {
-        #                 0: '$0', 
-        #                 int(self.first_thirty_cost_in_millions/2): f'${self.first_thirty_cost_in_millions/2} million', 
-        #                 int(self.first_thirty_cost_in_millions): {'label':f'${self.first_thirty_cost_in_millions} million', 'style':{'right':'-200px'}}
-        #             },
-        #             tooltip={'placement':'bottom'}), 
-        #         ], 
-        #     style={'display': 'none'}
-        # )
-
         Policy.all_policies.append(self)
-
         if self.slider:
             Policy.slider_policies.append(self)
+    
+    def __repr__(self):
+        return f'{self.title}, {self.description}, {self.affected}, {self.affect_type}, {self.delta}'
 
+    def cost_for_years(self, years: int) -> float:
+        return self.initial_cost + (self.cost_per_year * years)
 
     def create_checklist_component(self):
         id_name = self.title.replace(' ','-').lower()
@@ -124,9 +98,6 @@ class Policy:
             ], 
         style={'display': 'none'}
         )   
-
-    def __repr__(self):
-        return f'{self.title}, {self.description}, {self.affected}, {self.affect_type}, {self.delta}'
 
     @classmethod
     def instantiate_from_csv(cls, path: str):
@@ -161,6 +132,7 @@ class Effect:
         if self.cost_equation == '':
             return 0
         MAX_SURFACE_AREA = 5574.65
+        # exposed_km2 is used in the cost equations that are evaluated and returned
         exposed_km2 = MAX_SURFACE_AREA - bath.at[round(elevation_m,2), 'Surface Area']
         return eval(self.cost_equation.split('=')[1])
     
@@ -219,7 +191,6 @@ def LoadYearlyStats(path: str) -> dict:
     data[DataSchema.total_consumptive_use] = unconverted_data['net_consumption']
     data[DataSchema.agriculture_consumption] = unconverted_data['agriculture_consumption']
 
-    
     return data
 
 def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
@@ -251,6 +222,7 @@ def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
         if policy.affected == DataSchema.total_consumptive_use:
             if policy.affect_type == 'absolute':
                 adjusted_yearly[policy.affected] += policy.delta
+                #clips to zero
                 if adjusted_yearly[policy.affected] < 0:
                     adjusted_yearly[policy.affected] = 0
             if policy.affect_type == 'proportion':
@@ -265,6 +237,9 @@ def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
 
 def GSLPredictor(years_forward: int, yearly_stats: dict,
                     bath_df: pd.DataFrame, lake_df: pd.DataFrame):
+    '''
+    Predicts the yearly elevation of the Great Salt Lake given the information passed
+    '''
     
     MAX_VOLUME = 39.896064
         
@@ -296,7 +271,9 @@ def GSLPredictor(years_forward: int, yearly_stats: dict,
     return predictions
 
 def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
-    
+    '''
+    Creates a line graph of the past elevation and predicted elevation.
+    '''
     prediction['YYYY'] = prediction['YYYY'].astype('int64')
     adj_pred = prediction.set_index('YYYY')
 
@@ -316,33 +293,31 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
         combined[DataSchema.avg_elevation] *= METERS_TO_FEET
         MEAN_ELEVATION_BEFORE_1847 *= METERS_TO_FEET
         historic_avg_elevation *= METERS_TO_FEET
-        # trendline_y_points = [y * METERS_TO_FEET for y in trendline_y_points]
     else:
         elevation_unit = 'm'
 
     colors = ['blue','red']
 
-    # combined['datetime'] = pd.to_datetime(combined.index)
-
-    fig = px.scatter(combined, y=[DataSchema.avg_elevation,'Elevation Prediction'],
-                        x='Year',
-                        trendline='rolling',
-                        trendline_options=dict(window=rolling),
-                        color_discrete_sequence=colors,
-                        labels = {
-                            'value':f'Lake Elevation ({elevation_unit})',
-                            # 'datetime':'Year'
-                        },
-                    )
+    fig = px.scatter(
+        combined, 
+        y=[DataSchema.avg_elevation,'Elevation Prediction'],
+        x='Year',
+        trendline='rolling',
+        trendline_options=dict(window=rolling),
+        color_discrete_sequence=colors,
+        labels = {
+            'value':f'Lake Elevation ({elevation_unit})',
+            # 'datetime':'Year'
+        },
+    )
 
 
     start_date = 1870
     end_date = combined[-1:].index[0]
     fig.update_layout(xaxis_range=[start_date,end_date])
 
-    #only show trendlines
+    #only show trendlines:
     fig.data = [t for t in fig.data if t.mode == 'lines']
-
 
     lr_pos = 'top left'
     human_pos = 'top left'
@@ -352,15 +327,15 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
                     annotation_position = 'top left',
                     annotation_font_size = 10,
                     annotation_font_color = 'black',
-                    )
+    )
 
     fig.add_hline(y=historic_avg_elevation, line_dash='dot',
-                annotation_text = f'Average Since 1847, {historic_avg_elevation:.2f}{elevation_unit}',
-                annotation_position = human_pos,
-                annotation_font_size = 10,
-                annotation_font_color = colors[0],
-                line_color = colors[0],
-                )
+                    annotation_text = f'Average Since 1847, {historic_avg_elevation:.2f}{elevation_unit}',
+                    annotation_position = human_pos,
+                    annotation_font_size = 10,
+                    annotation_font_color = colors[0],
+                    line_color = colors[0],
+    )
 
     fig.add_hline(y=lr_average_elevaton, 
                     line_dash='dot',
@@ -369,17 +344,19 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
                     annotation_font_size = 10,
                     annotation_font_color = colors[1],
                     line_color = colors[1],
-            )
+    )
 
     return fig
 
-def RetrieveImage(lr_average_elevation: float) -> html.Img:
-    closest_half_meter = round(lr_average_elevation * 2) / 2
+def RetrieveImage(elevation: float) -> html.Img:
+    '''
+    Given an a lake elevation, retrieves the matching picture of the lake
+    '''
+    closest_half_meter = round(elevation * 2) / 2
     image_path = f'/assets/gsl_{closest_half_meter}.png'
     return html.Img(src=image_path)
 
 def CreateSankeyDiagram(units: str) -> go.Figure:
-
     labels = ['Streamflow','Bear River','Weber River','Jordan River','Groundwater','Direct Percipitation','Total Water In','Mineral Extraction','Evaporation',
         'Lake Water Lost','Total Water Out','Other Streams']
 
@@ -414,6 +391,7 @@ def CreateSankeyDiagram(units: str) -> go.Figure:
             ),
         )
     )
+
     return fig
 
 def CreateConsumptiveUseSunburst(unit: str) -> px.pie:
@@ -436,17 +414,18 @@ def CreateConsumptiveUseSunburst(unit: str) -> px.pie:
             names='Consumption category',
             hover_name='Consumption category',
             hole=0.5,
-            )
+    )
     pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.3f}' +f' {volume_unit}/yr')
     
     return pie_chart
 
-def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, bath: pd.DataFrame, unit_designation: str) -> html.Div:
+def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, bath: pd.DataFrame, unit_designation: str, years_forward: int) -> html.Div:
 
     MI2_PER_KM2 = 0.386102
     AVERAGE_M_SINCE_1847 = 1282.30
     ACRE_FEET_PER_KM3 = 810714
     FEET_PER_METER = 3.28084
+    ELEVATION_M_PER_KM3_CONSUMPTION = 1.948
 
     historical_average_sa = bath.at[AVERAGE_M_SINCE_1847, 'Surface Area']
     predicted_average_sa = bath.at[lr_elevation, 'Surface Area']
@@ -471,45 +450,44 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
         area_unit_words = 'square kilometers'
     
     # now we form the policy output table
-    ELEVATION_M_PER_KM3_CONSUMPTION = 1.948
     policies_df = pd.DataFrame(
-        columns = ['Policy',
-            'Cost over 30 years (millions)',
+        columns = [
+            'Policy',
+            f'Cost over {years_forward} years (millions)',
             f'Yearly Water Savings ({volume_unit})',
             f'Approximate Effect on Elevation ({elevation_unit})',
-            f'Cost effectivness ({volume_unit}/million $)']
+            f'Cost effectivness ({volume_unit}/million $)'
+        ]
     )
 
     # this loop adds applied policies to the dataframe
     for policy in applied_policies:
+
+        #this is a hotfix to prevent enviromental sliders from being listed as policies for the purpose of seeing policy effects.
+        POLICTIES_NOT_TO_LIST = ['Rain Adjustment Slider','Consumption Adjustment Slider','Temperature Adjustment Slider','Streamflow Adjustment Slider']
+        if policy.title in POLICTIES_NOT_TO_LIST:
+            continue
         if (policy.delta == 0 and policy.affect_type == 'absolute') or (policy.delta == 1 and policy.affect_type == 'proportion'):
             continue
-        
-        #this is a hotfix to prevent enviromental sliders from being listed as policies for the purpose of seeing policy effects.
-        if policy.affect_type == 'proportion':
-            continue
 
-        policy_features = [policy.title, policy.first_thirty_cost_in_millions]
-
-        # # if policy effect is proportional, we need to find the absolute effect
-        # if policy.affect_type == 'absolute':
-        #     policy_features.append(-policy.delta)
-        # else:
-        #     policy_features.append(-policy.delta_absolute)
+        policy_features = [policy.title, policy.cost_for_years(years_forward)]
 
         policy_features.append(-policy.delta)
         policy_effect_on_elevation = policy_features[2] * ELEVATION_M_PER_KM3_CONSUMPTION
         policy_features.append(policy_effect_on_elevation)
 
-        if policy.first_thirty_cost_in_millions != 0:
-            policy_cost_effectiveness = -policy.delta / policy.first_thirty_cost_in_millions
+        if policy.cost_for_years(years_forward) != 0:
+            policy_cost_effectiveness = -policy.delta / policy.cost_for_years(years_forward)
         else:
-            policy_cost_effectiveness = 0
+            policy_cost_effectiveness = None
 
         policy_features.append(policy_cost_effectiveness)
         policies_df.loc[len(policies_df)] = policy_features
     
     policies_df.loc['Total: '] = policies_df.sum(numeric_only=True)
+    policies_df.at['Total: ',f'Cost effectivness ({volume_unit}/million $)'] = (policies_df[f'Yearly Water Savings ({volume_unit})'].sum() 
+                                                                                / policies_df[f'Cost over {years_forward} years (millions)'].sum()
+    )
     policies_df.at['Total: ','Policy'] = 'Total: '
 
     if unit_designation == 'imperial':
@@ -519,7 +497,7 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     
     policies_df = policies_df.round(2)
     total_water_savings = policies_df.at['Total: ', f'Yearly Water Savings ({volume_unit})']
-    total_policy_cost_millions = policies_df.at['Total: ','Cost over 30 years (millions)']
+    total_policy_cost_millions = policies_df.at['Total: ',f'Cost over {years_forward} years (millions)']
     
     if np.isnan(total_water_savings):
         total_water_savings = 0
@@ -554,7 +532,6 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
             html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed policy of selected policies'),
             html.Br(),
             html.Div(id='policy-table',children=policy_table, style={'display': 'none',}),
-            # html.Button(id='show-effect-table-button', n_clicks=0, children='Show a detailed breakdown of the effects')
         ]      
     )
 
@@ -566,7 +543,7 @@ def TempToEvap(temperature_delta: float, unit: str) -> Policy:
         temperature_delta *= C_PER_F
 
     return Policy(
-        title='Temperature Effect on Evaporation',
+        title='Temperature Adjustment Slider',
         description='Temperature effects the lake\'s rate of evaporation',
         affected=DataSchema.evap_km3_per_km2,
         affect_type='absolute',
@@ -841,36 +818,22 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
 
 
     rain_delta = (rain_delta+100) / 100
-    applied_policies.append(Policy('Rain Adjustment Slider','n/a',DataSchema.percip_km3_per_km2,'proportion',delta=rain_delta))
-
     consumption_delta = (consumption_delta + 100) / 100
-    applied_policies.append(Policy('Consumption Ajustment Slider','n/a',DataSchema.total_consumptive_use,'proportion',delta=consumption_delta))
-
     streamflow_delta = (streamflow_delta + 100) / 100
+    applied_policies.append(Policy('Rain Adjustment Slider','n/a',DataSchema.percip_km3_per_km2,'proportion',delta=rain_delta))
+    applied_policies.append(Policy('Consumption Ajustment Slider','n/a',DataSchema.total_consumptive_use,'proportion',delta=consumption_delta))
     applied_policies.append(Policy('Streamflow Adjustment Slider','n/a',DataSchema.streamflow_before_consumption,'proportion',delta=streamflow_delta))
-
     applied_policies.append(TempToEvap(temperature_delta, units))
 
-    #adjust monthly stats based on the selected policies
+
     adjusted_yearly_stats = AdjustYearlyStats(applied_policies, yearly_stats)
-
-    #run the model based on the adjusted monthly stats
     prediction = GSLPredictor(years_forward, adjusted_yearly_stats, bath, lake)
+    lr_average_elevation = round(prediction.iloc[-1]['Elevation Prediction'], 2)
 
-    #long run average is based on the average of the last year. If weather is selected, the model is ran again without weather to find the true lr average
-    MONTHS_BEFORE_LONG_RUN_AVG = 108
-    if not weather:
-        lr_average_elevation = round(prediction.iloc[-1]['Elevation Prediction'], 2)
-    else:
-        temp_prediction_weather = GSLPredictor(years_forward, adjusted_yearly_stats, bath, lake)
-        lr_average_elevation = round(prediction.iloc[-1]['Elevation Prediction'], 2)
 
-    # units cosmetically change graph
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake, units)
-
     lake_picture = RetrieveImage(lr_average_elevation)
-
-    written_effects = CreateWrittenEffects(lr_average_elevation, applied_policies, bath, units)
+    written_effects = CreateWrittenEffects(lr_average_elevation, applied_policies, bath, units, years_forward)
 
     return line_graph, lake_picture, written_effects
 
