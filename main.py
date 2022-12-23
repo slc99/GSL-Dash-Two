@@ -10,6 +10,7 @@ import plotly.express as px
 from dash_extensions import BeforeAfter
 import plotly.graph_objects as go
 import pickle
+import copy
 
 class DataSchema:
     streamflow_after_consumption = 'streamflow_after_consumption'
@@ -37,10 +38,7 @@ class Policy:
 
     def __init__(self, title: str, description: str, affected: str, 
         affect_type: str, delta: float, initial_cost = 0, cost_per_year = 0, 
-        slider = '', slider_message = '', first_thirty_cost_in_millions = -1):
-
-        if affect_type == 'proportion':
-            assert delta >= 0, f'Delta: {delta}. Delta must be above 0 '
+        slider = '', slider_message = '', selected_cost = 0):
 
         self.title = title
         self.description = description
@@ -51,12 +49,17 @@ class Policy:
         self.cost_per_year = cost_per_year
         self.slider = slider
         self.slider_message = slider_message
-        if first_thirty_cost_in_millions == -1:
-            self.first_thirty_cost_in_millions = int((initial_cost + (cost_per_year * 30))/1000000)
+        if self.initial_cost > 0 and self.cost_per_year > 0:
+            # change this to implement sliders where there is an initial and yearly cost. 
+            # may need a callback from the years forward slider
+            pass
+        if cost_per_year > 0:
+            self.max_to_invest = cost_per_year
         else:
-            self.first_thirty_cost_in_millions = first_thirty_cost_in_millions
+            self.max_to_invest = initial_cost
         self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
         self.id_name = title.replace(' ','-').lower()
+        self.selected_cost = selected_cost
 
         Policy.all_policies.append(self)
         if self.slider:
@@ -66,6 +69,10 @@ class Policy:
         return f'{self.title}, {self.description}, {self.affected}, {self.affect_type}, {self.delta}'
 
     def cost_for_years(self, years: int) -> float:
+        if self.selected_cost != 0:
+            if self.cost_per_year > 0:
+                return self.initial_cost + (self.selected_cost * years)
+            return self.selected_cost
         return self.initial_cost + (self.cost_per_year * years)
 
     def create_checklist_component(self):
@@ -87,12 +94,12 @@ class Policy:
                 dcc.Slider(
                 id = self.id_name + '-slider',
                 min = 0,
-                max = self.first_thirty_cost_in_millions,
+                max = self.max_to_invest,
                 value = 0,
                 marks = {
                     0: '$0', 
-                    int(self.first_thirty_cost_in_millions/2): f'${self.first_thirty_cost_in_millions/2} million', 
-                    int(self.first_thirty_cost_in_millions): {'label':f'${self.first_thirty_cost_in_millions} million', 'style':{'right':'-200px'}}
+                    int(self.max_to_invest/2): Effect.format_cost_to_print(self.max_to_invest/2), 
+                    int(self.max_to_invest): {'label':Effect.format_cost_to_print(self.max_to_invest), 'style':{'right':'-200px'}}
                 },
                 tooltip={'placement':'bottom'}), 
             ], 
@@ -169,6 +176,20 @@ class Effect:
                 units = effect.get('units')
             )
 
+def FormatNumberToPrint(cost: float) -> str:
+    if cost > 1000000000:
+        word = 'billion'
+        cost /= 1000000000
+        return f'{cost:.1f} {word}'
+    elif cost > 1000000:
+        word = 'million'
+        cost /= 1000000            
+        return f'{cost:.1f} {word}'
+    elif cost > 1000:
+        return f'{round(cost/1000)},000'
+    else:
+        return f'{cost:.00f}'
+
 def LoadYearlyStats(path: str) -> dict:
     '''
     Loads yearly statsitics as a dictionary
@@ -197,7 +218,7 @@ def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
     '''
     Adjusts the yearly variables by the given policies
     '''
-    adjusted_yearly = yearly_stats.copy()  
+    adjusted_yearly = yearly_stats.copy()
 
     for policy in policies:
         if policy.affect_type == 'absolute':
@@ -222,7 +243,7 @@ def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
         if policy.affected == DataSchema.total_consumptive_use:
             if policy.affect_type == 'absolute':
                 adjusted_yearly[policy.affected] += policy.delta
-                #clips to zero
+                #clip to zero
                 if adjusted_yearly[policy.affected] < 0:
                     adjusted_yearly[policy.affected] = 0
             if policy.affect_type == 'proportion':
@@ -310,7 +331,6 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
             # 'datetime':'Year'
         },
     )
-
 
     start_date = 1870
     end_date = combined[-1:].index[0]
@@ -426,25 +446,25 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     ACRE_FEET_PER_KM3 = 810714
     FEET_PER_METER = 3.28084
     ELEVATION_M_PER_KM3_CONSUMPTION = 1.948
+    M3_PER_KM3 = 1000000
+    ACRE_FEET_PER_M3 = ACRE_FEET_PER_KM3 / M3_PER_KM3
 
     historical_average_sa = bath.at[AVERAGE_M_SINCE_1847, 'Surface Area']
     predicted_average_sa = bath.at[lr_elevation, 'Surface Area']
     change_in_sa = predicted_average_sa - historical_average_sa
     percent_change_sa = 100 * change_in_sa / historical_average_sa
 
-    if change_in_sa > 0:
-        words = ['less', 'a decrease','increase']
-    else:
-        words = ['more','an increase','decrease']
     
     if unit_designation == 'imperial':
         volume_unit = 'AF'
+        volume_unit_effectivness = 'AF'
         elevation_unit = 'ft'
         area_unit = 'mi2'
         area_unit_words = 'square miles'
         change_in_sa *= MI2_PER_KM2
     else:
         volume_unit = 'km3'
+        volume_unit_effectivness = 'm3'
         elevation_unit = 'm'
         area_unit = 'km2'
         area_unit_words = 'square kilometers'
@@ -456,80 +476,121 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
             f'Cost over {years_forward} years (millions)',
             f'Yearly Water Savings ({volume_unit})',
             f'Approximate Effect on Elevation ({elevation_unit})',
-            f'Cost effectivness ({volume_unit}/million $)'
+            f'Cost effectivness ({volume_unit_effectivness}/million $)'
         ]
     )
 
-    # this loop adds applied policies to the dataframe
+    # add applied policies to the dataframe by row
     for policy in applied_policies:
 
-        #this is a hotfix to prevent enviromental sliders from being listed as policies for the purpose of seeing policy effects.
-        POLICTIES_NOT_TO_LIST = ['Rain Adjustment Slider','Consumption Adjustment Slider','Temperature Adjustment Slider','Streamflow Adjustment Slider']
-        if policy.title in POLICTIES_NOT_TO_LIST:
-            continue
-        if (policy.delta == 0 and policy.affect_type == 'absolute') or (policy.delta == 1 and policy.affect_type == 'proportion'):
+        POLICIES_TO_NOT_DISPLAY = ['Rain Adjustment Slider','Consumption Ajustment Slider','Temperature Adjustment Slider','Streamflow Adjustment Slider']
+        if policy.title in POLICIES_TO_NOT_DISPLAY:
             continue
 
-        policy_features = [policy.title, policy.cost_for_years(years_forward)]
-
-        policy_features.append(-policy.delta)
-        policy_effect_on_elevation = policy_features[2] * ELEVATION_M_PER_KM3_CONSUMPTION
-        policy_features.append(policy_effect_on_elevation)
-
-        if policy.cost_for_years(years_forward) != 0:
-            policy_cost_effectiveness = -policy.delta / policy.cost_for_years(years_forward)
+        policy_title = policy.title
+        policy_cost_millions = policy.cost_for_years(years_forward) / 1000000
+        policy_delta = -policy.delta
+        policy_effect_on_elevation = policy_delta * ELEVATION_M_PER_KM3_CONSUMPTION
+        if policy_cost_millions != 0:
+            policy_cost_effectiveness = M3_PER_KM3 * policy_delta / policy_cost_millions
         else:
             policy_cost_effectiveness = None
 
-        policy_features.append(policy_cost_effectiveness)
+        policy_features = [policy_title, policy_cost_millions, policy_delta, policy_effect_on_elevation, policy_cost_effectiveness]
         policies_df.loc[len(policies_df)] = policy_features
     
+    # add the 'total' row
     policies_df.loc['Total: '] = policies_df.sum(numeric_only=True)
-    policies_df.at['Total: ',f'Cost effectivness ({volume_unit}/million $)'] = (policies_df[f'Yearly Water Savings ({volume_unit})'].sum() 
-                                                                                / policies_df[f'Cost over {years_forward} years (millions)'].sum()
-    )
     policies_df.at['Total: ','Policy'] = 'Total: '
-
+    policies_df.at['Total: ',f'Cost effectivness ({volume_unit_effectivness}/million $)'] = (
+        M3_PER_KM3 
+        * policies_df.at['Total: ',f'Yearly Water Savings ({volume_unit})']                                                                 
+        / policies_df.at['Total: ',f'Cost over {years_forward} years (millions)']
+    )
+    
+    # convert for units after all the processing is done
     if unit_designation == 'imperial':
         policies_df[f'Yearly Water Savings ({volume_unit})'] *= ACRE_FEET_PER_KM3
         policies_df[f'Approximate Effect on Elevation ({elevation_unit})'] *= FEET_PER_METER
-        policies_df[f'Cost effectivness ({volume_unit}/million $)'] *= ACRE_FEET_PER_KM3
-    
-    policies_df = policies_df.round(2)
-    total_water_savings = policies_df.at['Total: ', f'Yearly Water Savings ({volume_unit})']
-    total_policy_cost_millions = policies_df.at['Total: ',f'Cost over {years_forward} years (millions)']
+        policies_df[f'Cost effectivness ({volume_unit_effectivness}/million $)'] *= ACRE_FEET_PER_M3
+
+    total_water_savings = policies_df.iloc[-1][f'Yearly Water Savings ({volume_unit})']
+    total_policy_cost = policies_df.at['Total: ', f'Cost over {years_forward} years (millions)'] * 1000000
     
     if np.isnan(total_water_savings):
         total_water_savings = 0
-        total_policy_cost_millions = 0
+        total_policy_cost = 0
 
+    policies_df = policies_df.round(2)
     policy_table = dash_table.DataTable(policies_df.to_dict('records'),[{"name": i, "id": i} for i in policies_df.columns])
 
-    li_list = []
-    if total_water_savings != 0:
-        written_policy_effects = f'''The selected policies will {words[2]} water going into the lake by {abs(total_water_savings)} {volume_unit} per year and 
-                                    cost ${total_policy_cost_millions} million over then next thirty years.'''
-        li_list.append(html.Li(written_policy_effects))
+    #now to create the list of written effects
+    if change_in_sa > 0:
+        words = ['less', 'a decrease','increase']
+    else:
+        words = ['more','an increase','decrease']
 
-    surface_area_effect = f'''{-change_in_sa:.2f} {area_unit_words} of lakebed are exposed, {words[1]} of {-percent_change_sa:.0f}% compared to 
-                                the average since 1847.'''
-    li_list.append(html.Li(surface_area_effect))
+    written_number ={
+        20: 'twenty',
+        30: 'thirty',
+        40: 'fourty',
+        50: 'fifty',
+        60: 'sixty',
+        70: 'seventy',
+        80: 'eighty',
+        90: 'ninety',
+        100: 'one hundred'
+    }
+
+    li_list = []
 
     yearly_lake_level_cost = 0
     for effect in Effect.all_effects:
-        if effect.lower_threshold < lr_elevation < effect.upper_threshold: 
+        if effect.lower_threshold < lr_elevation < effect.upper_threshold:
            li_list.append(html.Li(effect.filled_description(lr_elevation,bath)))
            yearly_lake_level_cost += effect.cost_function(lr_elevation, bath)
-    
-    li_list.insert(0, html.Li(f'''The effects of the lake's predicted level will cost {Effect.format_cost_to_print(30 * yearly_lake_level_cost)} over the next 
-                                    thirty years, equivalent to {Effect.format_cost_to_print(yearly_lake_level_cost)} yearly.'''))
+
+    policy_cost_minus_lake_costs = total_policy_cost - (years_forward * yearly_lake_level_cost)
+
+    if policy_cost_minus_lake_costs < 0:
+        summary_words = ['effects of the lake\'s elevation','selected policies']
+    else:
+        summary_words = ['selected policies', 'effects of the lake\'s elevation']
+
+    summary_sentence = html.Li(children=[
+        html.Strong(f'''Overall, the {summary_words[0]} will cost ${FormatNumberToPrint(abs(policy_cost_minus_lake_costs))} more then the cost of the {summary_words[1]}
+        over the next {written_number[years_forward]} years. '''),
+        'This ignores all non-monetary effects. See below for further discussion.'
+    ])
+    total_lake_level_cost = html.Li(children=[
+        'The effects of the lake\'s predicted level will cost ',
+        html.Strong(f'${FormatNumberToPrint(years_forward * yearly_lake_level_cost)} '),
+        f'over the next {written_number[years_forward]} years, equivalent to ${FormatNumberToPrint(yearly_lake_level_cost)} yearly.',
+    ])
+    written_policy_effects = html.Li(children=[
+        f'The selected policies will {words[2]} water going into the lake by {total_water_savings:.2f} {volume_unit} per year and cost ',
+        html.Strong(f'${FormatNumberToPrint(total_policy_cost)}'),
+        f'over then next {written_number[years_forward]} years.'
+    ])
+    surface_area_effect = html.Li(children=[
+        html.Strong(f'{FormatNumberToPrint(abs(change_in_sa))} {area_unit_words} of lakebed will be exposed'),
+        f', {words[1]} of {-percent_change_sa:.0f}% compared to the average since 1847.',
+    ])
+
+    if change_in_sa < 0:
+        li_list.insert(0, surface_area_effect)
+    if total_water_savings != 0:
+        li_list.insert(0, written_policy_effects)
+    if yearly_lake_level_cost != 0:
+        li_list.insert(0, total_lake_level_cost)
+    li_list.insert(0, summary_sentence)
 
     return html.Div(
         id='written-lake-effects-output', 
         children=[
             html.P('The selected policies will result in the following effects: '),
             html.Ul(children=li_list),
-            html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed policy of selected policies'),
+            html.Button(id='show-policy-table-button', n_clicks=0, children='Show a detailed breakdown of selected policies'),
             html.Br(),
             html.Div(id='policy-table',children=policy_table, style={'display': 'none',}),
         ]      
@@ -548,7 +609,7 @@ def TempToEvap(temperature_delta: float, unit: str) -> Policy:
         affected=DataSchema.evap_km3_per_km2,
         affect_type='absolute',
         delta=(EVAP_CHANGE_PER_C * temperature_delta)
-        )
+    )
 
 
 Policy.instantiate_from_csv('data/policies.csv')
@@ -578,7 +639,8 @@ app.layout = html.Div([
     # ),
     dcc.Graph(id='sankey-diagram'),
     dcc.Graph(id='consumptive-use-sunburst'),
-    html.Div(children=[html.H2('Policy Options',style={'margin-bottom':'0em'}),html.A('Sources',href='#about-the-policies')],style={'margin-bottom':'1em'}),
+    html.H2('Policy Options',style={'margin-bottom':'0em'}),
+    # html.Div(children=[html.H2('Policy Options',style={'margin-bottom':'0em'}),html.A('Sources',href='#about-the-policies')],style={'margin-bottom':'1em'}),
     html.Div(
         id='policy-sliders',
         children = slider_policy_list
@@ -598,20 +660,6 @@ app.layout = html.Div([
     html.Div(id='enviroment',
         children=[
             html.H2('Enviroment Variables'),
-            dcc.Checklist(id='weather-checklist',
-                options = [{
-                    'label': html.Span(children=[
-                        html.Strong('Cosmetic Weather'), 
-                        html.Br() ,
-                        'Activate RANDOMLY generated weather. Does not change predicted long term average.',
-                        html.Br()
-                        ]), 
-                    'value': True
-                    }],
-                value = [],
-                labelStyle={'display': 'block','text-indent': '-1.25em'},
-                style={'position':'relative','left': '1em'}
-            ),
             html.Br(),
             html.Strong('Adjust rainfall directly onto the lake\'s surface'),
             dcc.Slider(
@@ -659,54 +707,54 @@ app.layout = html.Div([
                     50: '50% more streamflow',
                     100: {'label':'100% more streamflow (Double streamflow)', 'style':{'right':'-200px',}},
                 },
-                value = -12,
+                value = 0,
                 tooltip={
                     'placement':'bottom'
                 }
             ),
             html.Span(
-                children = [
-                html.Strong('How many years in the future to predict'),
-                dcc.Slider(
-                    id = 'years-forward-slider',
-                    min = 20,
-                    max = 100,
-                    value = 30,
-                    step = 1,
-                    marks = {
-                        20: '20 years forward',
-                        40: '40 years forward',
-                        60: '60 years forward',
-                        80: '80 years forward',
-                        100: {'label':'100 years forward', 'style':{'right':'-200px'}},
-                    },
-                    tooltip={'placement':'bottom'},
-                ),
-                ],
-            style={'display': 'none'}
-            ),
-            html.Span(
                 id = 'temperature-slider-parent',
                 children = [
-                html.Strong('Adjust average temperature'),
-                dcc.Slider(
-                    id = 'temperature-slider',
-                    min = -5,
-                    max = 5,
-                    value = 0,
-                    step = 0.1,
-                    #marks set by callback
-                    tooltip={'placement':'bottom'},
-                ),
+                    html.Strong('Adjust average temperature'),
+                    dcc.Slider(
+                        id = 'temperature-slider',
+                        min = -5,
+                        max = 5,
+                        value = 0,
+                        step = 0.1,
+                        #marks set by callback
+                        tooltip={'placement':'bottom'},
+                    ),
+                ],
+                style={'display': 'block'}
+            ),
+            html.Span(
+                children = [
+                html.Strong('How many years in the future to predict'),
+                    dcc.Slider(
+                        id = 'years-forward-slider',
+                        min = 20,
+                        max = 100,
+                        value = 30,
+                        step = 10,
+                        marks = {
+                            20: '20 years forward',
+                            40: '40 years forward',
+                            60: '60 years forward',
+                            80: '80 years forward',
+                            100: {'label':'100 years forward', 'style':{'right':'-200px'}},
+                        },
+                        tooltip={'placement':'bottom'},
+                    ),
                 ],
             style={'display': 'block'}
             ),
         ]
     ),
 
-    dcc.Dropdown(id = 'unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'imperial'),
+    dcc.Dropdown(id = 'unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
     html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
-    html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection',style={'display':'none'}),
+    # html.Button(id='reset-model-button', n_clicks=0, children='Reset Selection',style={'display':'none'}),
     html.Div(
         id='line-graph',
         children=[
@@ -766,7 +814,6 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
     State('years-forward-slider','value'),
     State('streamflow-slider','value'),
     State('temperature-slider','value'),
-    State('weather-checklist','value'),
     State('unit-dropdown','value'),
     State(Policy.slider_policies[0].id_name + '-slider','value'),
     State(Policy.slider_policies[1].id_name + '-slider','value'),
@@ -779,7 +826,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
     State(Policy.slider_policies[8].id_name + '-slider','value'),
     # prevent_initial_call=True
 )
-def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, temperature_delta: float, weather: list, 
+def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, temperature_delta: float,
     units: str, slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, 
     slider_7: float, slider_8: float,) -> list:
 
@@ -787,37 +834,34 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     applied_policies = []
 
     policy_slider_values = [slider_0, slider_1, slider_2, slider_3, slider_4, slider_5, slider_6, slider_7, slider_8]
-    i=0
-    for selected_cost in policy_slider_values:
-        max_consumption_change = Policy.slider_policies[i].delta
-        max_yearly_cost = Policy.slider_policies[i].first_thirty_cost_in_millions
-        # this equation figures out the monthly change to consumption given the selected investment amount
-        selected_consumption_change_yearly = selected_cost * (max_consumption_change / max_yearly_cost)
+    i = -1
+    for cost in policy_slider_values:
+        i += 1
+        if cost == 0:
+            continue
+        portion_of_effect = cost / Policy.slider_policies[i].max_to_invest
+        effective_delta = portion_of_effect * Policy.slider_policies[i].delta
         applied_policies.append(
             Policy(
-                Policy.slider_policies[i].title,
-                'n/a',
-                Policy.slider_policies[i].affected,
-                Policy.slider_policies[i].affect_type,
-                delta = -selected_consumption_change_yearly,
-                first_thirty_cost_in_millions = selected_cost,
+                title = Policy.slider_policies[i].title,
+                description = 'n/a',
+                affected = Policy.slider_policies[i].affected,
+                affect_type = Policy.slider_policies[i].affect_type,
+                delta = -effective_delta,
+                initial_cost = Policy.slider_policies[i].initial_cost,
+                cost_per_year = Policy.slider_policies[i].cost_per_year,
+                selected_cost = cost,
             )
         )
-        i += 1
-
-    # the dash component passes 'weather' as a list
-    if len(weather) > 0:
-        weather = True
-    else:
-        weather = False
 
     #adds checklist policies (without a slider) to the policies to apply
     for policy in Policy.all_policies:
         if policy.title in checklist_policies:
+            policy.selected_cost = policy.max_to_invest
             applied_policies.append(policy)
 
 
-    rain_delta = (rain_delta+100) / 100
+    rain_delta = (rain_delta + 100) / 100
     consumption_delta = (consumption_delta + 100) / 100
     streamflow_delta = (streamflow_delta + 100) / 100
     applied_policies.append(Policy('Rain Adjustment Slider','n/a',DataSchema.percip_km3_per_km2,'proportion',delta=rain_delta))
@@ -847,17 +891,6 @@ def DisplayPolicyTable(n_clicks:int):
         return {'display': 'none'}
     return {'display': 'block'}
 
-@app.callback(
-    Output('policy-checklist','value'),
-    Output('rain-slider','value'),
-    Output('human-consumption-slider','value'),
-    Output('years-forward-slider','value'),
-    Output('streamflow-slider','value'),
-    Output('weather-checklist','value'),
-    Input('reset-model-button', 'n_clicks')
-)
-def ResetButton(_:int):
-    return [], 0, 0, 30, 0, []
 
 # Below are the dash call back for policy sliders. Each callback displays or hides the slider based on the adjoining checkbox. It also resets it to zero when hidden
 @app.callback(

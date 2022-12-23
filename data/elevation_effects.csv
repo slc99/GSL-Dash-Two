@@ -1,16 +1,16 @@
 effect_description,,,lower_m,upper_m,cost_equation,units
-Shorter ski seasons caused by dust on snow and reduced lake effect costs the Utah economy {cost} per year. ,,,0,1278,cost = 720 * (exposed_km2 - 2795),surface_area
-"The brine shrimp industry is decimated, costing the Utah economy {cost} per year.",,,0,1270.64,cost = 67000000,elevation
-"High salinity impairs the growth of brine shrimp and the algae that brine shrimp eat, harming the brine shrimp industry to the tune of {cost} per year.",,,1271,1277,cost = 67000000 * ((1277 - elevation_m)**4 /1296),elevation
-"The exposed lake bed increases dust pollution in the Wasatch Valley, leading to higher rates of asthma, cancer, and other diseases. The medical costs of this are estimated to be {cost} yearly.",,,0,1282.3,Cost = 14440 * exposed_km2 * 0.386102,surface_area
-"Low lake levels harm the lake's recreation industry by reducing opportunities for birding, duck hunting, boating, and rowing. The yearly expected economic impact is {cost}.",,,0,1278,Cost = 160000000 * (((1278 - elevation_m)**3) / 8**3),elevation
-"The mineral industry is decimated, reducing the Utah economy by {cost} per year.",,,0,1272,Cost = 1300000000,elevation
-"Migratory bird populations are harmed by the reduction in brine shrimp, algae, and habitats. ",,,0,1278,,
-"Antelope Island is connected to the mainland, an adverse condition for the antelope and bison who call the island their home.",,,0,1279.8552,,
-"Islands used by migratory nesting birds are connected to the mainland, which allows  predators access.",,,0,1279.5504,,
-The majority of wetlands are adversely affected.,,,0,1278.636,,
-West Desert pumping is active. Significant costs associated with flooding are avoided.,,,1282.598,1524,,
-Procedures for West Desert pumping are started.,,,1281.379,1282.2936,,
-The Great Salt Lake marina is closed due to low water levels.,,,0,1277.7216,,
-The Spiral Jetty is visible.,,,0,1279.5504,,
-"Mineral pumping in the South Arm becomes limited. To continue mineral extraction, companies must spend millions on infrastructure.",,,0,1278.0264,,
+Shorter ski seasons caused by dust on snow and reduced lake effect will cost the Utah economy {cost} per year. ,,,0,1278,cost = 720 * (exposed_km2 - 2795),surface_area
+"The brine shrimp industry will be decimated, which will cost the Utah economy {cost} per year.",,,0,1270.64,cost = 67000000,elevation
+High salinity impairs the growth of brine shrimp and the algae that brine shrimp eat. The elevation will harm the brine shrimp industry to the tune of {cost} per year.,,,1271,1277,cost = 67000000 * ((1277 - elevation_m)**4 /1296),elevation
+"The exposed lake bed will increase dust pollution in the Wasatch Valley, leading to higher rates of asthma, bronchitis, and other diseases. The medical costs of this are estimated to be {cost} yearly.",,,0,1282.3,Cost = 14440 * exposed_km2 * 0.386102,surface_area
+"Low lake levels harm the lake's recreation industry by reducing opportunities for birding, duck hunting, boating, and rowing. The yearly expected economic impact at this lake level is {cost}.",,,0,1278,Cost = 160000000 * (((1278 - elevation_m)**3) / 8**3),elevation
+"The mineral industry will be decimated at this elevation, reducing the Utah economy by {cost} per year.",,,0,1272,Cost = 1300000000,elevation
+"Migratory bird populations will be harmed by the reduction in brine shrimp, algae, and habitats. ",,,0,1278,,
+"Antelope Island will be connected to the mainland, an adverse condition for the antelope and bison that live on the island.",,,0,1279.8552,,
+"Islands used by migratory nesting birds will be connected to the mainland, which allows  predators access.",,,0,1279.5504,,
+The majority of wetlands will be adversely affected.,,,0,1278.636,,
+West Desert pumping will be active. Significant costs associated with flooding are avoided.,,,1282.598,1524,,
+Procedures for West Desert pumping will be started.,,,1281,1282.2936,,
+The Great Salt Lake marina will be closed due to low water levels.,,,0,1277.7216,,
+The Spiral Jetty will be visible.,,,0,1279.5504,,
+"Mineral pumping in the South Arm will be limited. To continue mineral extraction, companies must spend millions on infrastructure.",,,0,1278.0264,,
