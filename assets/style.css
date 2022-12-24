@@ -1,9 +1,18 @@
 body {
     padding: 1em 2.5em; 
-    max-width: 900px;
+    max-width: 1000px;
     margin: auto;
 }
 
+p {
+    line-height: 1.2em;
+    text-indent: 4em;
+}
+
+li {
+    line-height: 1.2em;
+
+}
 
 /* labelStyle={
     display: block
