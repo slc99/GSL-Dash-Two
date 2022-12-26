@@ -631,7 +631,8 @@ for policy in Policy.slider_policies:
 
 
 app = Dash(__name__)
-# server = app.server
+app.title = 'GSL Policy Dashboard'
+server = app.server
 
 
 app.layout = html.Div([
@@ -1002,4 +1003,4 @@ def DisplayWaterBuyback(selected):
         return {'display': 'block'}, 0
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
