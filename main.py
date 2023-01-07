@@ -250,10 +250,13 @@ def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
                 policy.delta_absolute = adjusted_yearly[policy.affected] - new_adjusted
                 adjusted_yearly[policy.affected] = new_adjusted
 
+    #DELETE ME!!!!
+    # adjusted_yearly[DataSchema.total_consumptive_use] = 0
+    #ABOVE THIS
+
     adjusted_yearly[DataSchema.streamflow_after_consumption] = (adjusted_yearly[DataSchema.streamflow_before_consumption] 
                                                                 - adjusted_yearly[DataSchema.total_consumptive_use])
 
-    
     
     return adjusted_yearly
 
@@ -661,7 +664,7 @@ app.layout = html.Div([
     html.Div(
         id='body-section',
         children=[
-            html.Div(id='introduction', children=[ParseMarkedownText('data/markdown_text/introduction_markdown.txt')]),
+            html.Div(id='introduction', children=[ParseMarkedownText('data/markdown_text/opening_blurb.txt')]),
             html.Div(
                 id='model-options',
                 children=[
@@ -808,10 +811,12 @@ app.layout = html.Div([
             html.Div(
                 id='writeup-under-the-model',
                 children=[
+                    ParseMarkedownText('data/markdown_text/introduction_markdown.txt'),
                     ParseMarkedownText('data/markdown_text/about_the_policies_markdown.txt'),
                     ParseMarkedownText('data/markdown_text/about_the_effects_markdown.txt'),
                     ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
-                    ParseMarkedownText('data/markdown_test/works_cited.txt'),
+                    ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
+                    html.Div(id='works-cited',children=[ParseMarkedownText('data/markdown_text/works_cited.txt')]),
                     dcc.Graph(id='sankey-diagram'),
                     dcc.Graph(id='consumptive-use-sunburst'),
                 ]
