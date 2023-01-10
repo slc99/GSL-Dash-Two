@@ -110,8 +110,10 @@ hr {
 #model-options {
     padding-top: 0;
 }
-#introduction {
+#opening-blurb {
     padding: 0;
+    line-height: 2rem;
+    font-style: italic;
 }
 
 /* Model Output Section */

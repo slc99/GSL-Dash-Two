@@ -371,7 +371,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
 
     fig.add_hline(y=lr_average_elevaton, 
                     line_dash='dot',
-                    annotation_text = f'Long-term Policy Average, {lr_average_elevaton:.2f}{elevation_unit}',
+                    annotation_text = f'Long-run Policy Average, {lr_average_elevaton:.2f}{elevation_unit}',
                     annotation_position = lr_pos,
                     annotation_font_size = 10,
                     annotation_font_color = colors[1],
@@ -429,9 +429,10 @@ def CreateConsumptiveUseSunburst() -> px.pie:
         names='Consumption Category',
         hover_name='Consumption Category',
         hole=0.5,
-        title='Average yearly water consumption in the Great Salt Lake Basin (2003-2013)'
+        title='Average yearly water consumption in the Great Salt Lake Basin (2003-2013)',
     )
-    pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.2f}' +f' {volume_unit}/yr')
+    pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.2f}' + f' {volume_unit}/yr')
+    pie_chart.update_traces(textposition='outside')
 
     return pie_chart
 
@@ -675,7 +676,7 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
         'evap_km3_per_km2': 'Evaporation Rate (km3/km2/yr)',
         'y':'Expected Evaporation(km3/yr)',
         'Elevation':'Elevation (m)',
-        'streamflow_after_consumption':'Streamflow entering the lake',
+        'streamflow_after_consumption':'Total streamflow entering the lake (km3)',
         'datetime':'Year',
         'avg_elevation':'Average Elevation (m)',
     }
@@ -717,7 +718,6 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
     return html.Section(
         id='q-and-a',
         children=[
-            html.H3('Q&A'),
             html.Strong('Q: Does the model account for Utah\'s growing population?'),
             html.P('''While counterintuitive, the population of Utah has been uncorrelated with the total rate of water consumption for the last forty years. 
             This can be seen in the below graph, which shows the most recent forty years of water consumption data plotted against the population of Utah.'''),
@@ -731,7 +731,8 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
             farmland has been replaced by concrete. As cities grow into their surrounding countryside, land that was devoted to growing crops is replaced 
             by parking lots, homes, and lawns. As a whole, urban areas consume significantly less water per acre than farms do. In addition, efforts to reduce 
             water usage have helped keep overall water consumption flat. '''),
-            html.P('''Because there is no statistical relationship between population and water consumption, the model does not account for the growing population.'''),
+            html.P('''Because there is no statistical relationship between population and water consumption (since the 1970\'s), the prediction is not affected by the 
+            growing population.'''),
             html.Strong('Q: How is climate change represented in the model?'),
             html.P('''Climate change (as controlled through the \'adjust average temperature\' slider)  is integrated by adjusting the evaporation rate of the lake. 
             As seen below, the evaporation rate is correlated with the average yearly temperature to a statistically significant degree (p < 0.01). By default, 
@@ -785,11 +786,17 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
             are not built based on a threshold system, but rather a linear or quadratic relationship between expected cost and lake level. See below for more detail.'''),
             html.Strong('Q: Do you have any other cool graphs?'),
             html.P('''Of course. Here is a Sankey diagram that is helpful to understand the underlying dynamics of the Great Salt Lake. The diagram displays how water 
-            enters and leaves the lake over the course of an average year.'''),
+            enters and leaves the lake during of an average year.'''),
             dcc.Graph(className='writeup-charts',figure=CreateSankeyDiagram()),
-            html.P('''Over the course of an average year, humans consume 1.85km3 (1.5 million acre-feet) of water in the Great Salt Lake Basin. A breakdown of how that 
+            html.P('''Throughout an average year, humans consume 1.85km3 (1.5 million acre-feet) of water in the Great Salt Lake Basin. A breakdown of how that 
             water is consumed is displayed below. '''),
             dcc.Graph(className='writeup-charts',figure=CreateConsumptiveUseSunburst()),
+            html.P('''A few notes on the above categories: Agricultural consumption is by far the largest consumer of water in the basin. Evaporative mineral ponds 
+            include a handful of companies that pull water from the lake for the purpose of removing minerals. The most prominent of these companies is US Magnesium, 
+            formerly known as MagCorp. Municipal consumption includes all water used by households and industrial buildings, including lawn irrigation and data centers. 
+            Evaporation from impounded wetlands is the amount of water that evaporates from the surface of wetlands that are artificially maintained through a series of 
+            levies near river entrances to the Great Salt Lake. Finally, reservoir evaporation is the water that evaporates from the surface of reservoirs. Because this 
+            chart is based on consumptive water use, it may look different then other water use charts you may have seen.''')
         ]
     )
 
@@ -808,7 +815,7 @@ for policy in Policy.slider_policies:
 
 app = Dash(__name__)
 app.title = 'GSL Policy Dashboard'
-# server = app.server
+server = app.server
 
 
 app.layout = html.Div([
@@ -829,14 +836,16 @@ app.layout = html.Div([
                 children=[
                     html.Li(html.A('Inputs',href='#model-input-title')),
                     html.Li(html.A('Output',href='#model-output-title')),
+                    html.Li(html.A('Q&A',href='#q-and-a-title')),
+                    html.Li(html.A('Key Results',href='#key-results-title')),
                     html.Li(html.A('Model Writeup',href='#model-writeup-title')),
-                    html.Li(html.A('Sources',href='#sources-title')),
+                    html.Li(html.A('About Me',href='#about-me-title')),
                 ]   
             ),
         ]
     ),
     html.Div(
-        id='introduction', 
+        id='opening-blurb', 
         className='center-column-content',
         children=[ParseMarkedownText('data/markdown_text/opening_blurb.txt')],
     ),
@@ -877,7 +886,7 @@ app.layout = html.Div([
                         marks = {
                             -100: '100% less (No percip.)', 
                             -50: '50% less',
-                            0: 'No change',
+                            0: 'Long-run average',
                             50: '50% more',
                             100: {'label':'100% more (Double percip.)', 'style':{'right':'-200px'}}
                         },
@@ -894,7 +903,7 @@ app.layout = html.Div([
                         marks = {
                             -100: '100% less (No water consumption)',
                             -50: '50% less',
-                            0: 'No change',
+                            0: 'Recent average',
                             50: '50% more',
                             100: {'label':'100% more (Double consumption)', 'style':{'right':'-200px'}},
                         },
@@ -911,7 +920,7 @@ app.layout = html.Div([
                             -100: '100% less (No river flow)',
                             -50: '50% less',
                             -16: {'label':'5-year average', 'style':{'max-width': '20px', 'margin-left':'-10px'}},
-                            0: 'No change',
+                            0: 'Long-run average',
                             50: '50% more',
                             100: {'label':'100% more (Double river flow)', 'style':{'right':'-200px',}},
                         },
@@ -985,7 +994,7 @@ app.layout = html.Div([
                         children = [
                             html.H3('Predicted surface area:',className='output-title'),
                             dcc.Loading(html.Div(id='lake-predicted-image')),
-                            html.I('The black line is the shoreline of the average natural lake level of 1282m (4207ft).'),
+                            html.I('The black line indicates the shoreline of the average natural lake level of 1282m (4207ft).'),
                         ]
                     ),
                     html.Div(
@@ -1012,17 +1021,18 @@ app.layout = html.Div([
         id='writeup-under-the-model',
         className='center-column-content',
         children=[
-            html.H2('Writeup', id='model-writeup-title'),
+            html.H2('Q&A (and some fun graphs)', id='q-and-a-title'),
             html.Hr(),
             QAndASection(full_lake),
-            ParseMarkedownText('data/markdown_text/introduction_markdown.txt'),
-            ParseMarkedownText('data/markdown_text/about_the_policies_markdown.txt'),
-            ParseMarkedownText('data/markdown_text/about_the_effects_markdown.txt'),
-            ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
-            ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
-            html.H2('Sources', id='sources-title'),
+            html.H2('Writeup',id='model-writeup-title'),
             html.Hr(),
-            html.Div(id='works-cited',children=[ParseMarkedownText('data/markdown_text/works_cited.txt')]),
+            ParseMarkedownText('data/markdown_text/writeup.txt'),
+            html.H2('Key Results',id='key-results-title'),
+            html.Hr(),
+            html.P('Lake needs more water'),
+            html.H2('About Me',id='about-me-title'),
+            html.Hr(),
+            html.P('Whats up, its ya boy, back at it again with another minecraft tips and tricks tutorial')
         ]
     ),
 ])
@@ -1044,7 +1054,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
         marks = {
             -9: '9\u00B0 f cooler',
             -4.5: '-4.5\u00B0 f',
-            0: 'No change',
+            0: 'Recent average',
             3.2: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}},
             4.5: '+4.5\u00B0 f',
             9: {'label':'9\u00B0 f warmer', 'style':{'right':'-200px'}}
@@ -1056,7 +1066,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
         marks = {
             -5: '5\u00B0 C cooler',
             -2.5: '-2.5\u00B0 C',
-            0: 'No change', 
+            0: 'Recent average', 
             1.8: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}}, 
             # 2.5:'2.5\u00B0 C warmer', 
             2.5: '+2.5\u00B0 C',
@@ -1249,5 +1259,6 @@ def DisplayWaterBuyback(selected):
     else:
         return {'display': 'block'}, 0
 
+
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
