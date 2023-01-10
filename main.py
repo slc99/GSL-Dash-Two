@@ -338,7 +338,15 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
 
     start_date = 1870
     end_date = combined[-1:].index[0]
-    fig.update_layout(xaxis_range=[start_date,end_date])
+    fig.update_layout(
+        xaxis_range=[start_date,end_date],
+        margin={
+            'l':20,
+            'r':20,
+            'b':20,
+            't':20 
+        }
+    )
 
     #only show trendlines:
     fig.data = [t for t in fig.data if t.mode == 'lines']
@@ -376,7 +384,7 @@ def RetrieveImage(elevation: float) -> html.Img:
     ''' Given an a lake elevation, retrieves the matching picture of the lake '''
     closest_half_meter = round(elevation * 2) / 2
     image_path = f'/assets/gsl_{closest_half_meter}.png'
-    return html.Img(src=image_path)
+    return html.Img(id='lake-image',src=image_path)
 
 def CreateSankeyDiagram(units: str) -> go.Figure:
     labels = ['Streamflow','Bear River','Weber River','Jordan River','Groundwater','Direct Percipitation','Total Water In','Mineral Extraction','Evaporation',
@@ -555,7 +563,7 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     policy_cost_minus_lake_costs = total_policy_cost - (years_forward * yearly_lake_level_cost)
 
     if policy_cost_minus_lake_costs < 0:
-        summary_words = ['effects of the lake\'s elevation','selected policies']
+        summary_words = ['effects of the lake\'s level','selected policies']
     else:
         summary_words = ['selected policies', 'effects of the lake\'s elevation']
 
@@ -596,6 +604,61 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
             html.Div(id='policy-table',children=policy_table, style={'display': 'none',}),
         ]      
     )
+
+def NewLakeStats(lr_elevation: float, bath: pd.DataFrame, unit_designation: str) -> html.Div:
+    MI2_PER_KM2 = 0.386102
+    AVERAGE_M_SINCE_1847 = 1282.30
+    ACRE_FEET_PER_KM3 = 810714
+    FEET_PER_METER = 3.28084
+    M3_PER_KM3 = 1000000
+    LOWEST_POINT_M = 1270
+
+    predicted_sa = bath.at[lr_elevation, 'Surface Area']
+    predicted_volume = bath.at[lr_elevation, 'Volume']
+    predicted_depth = lr_elevation - LOWEST_POINT_M
+    percent_sa = 100 * predicted_sa / bath.at[AVERAGE_M_SINCE_1847, 'Surface Area']
+    percent_volume = 100 * predicted_volume / bath.at[AVERAGE_M_SINCE_1847, 'Volume']
+    percent_elevation = 100 * predicted_depth / (AVERAGE_M_SINCE_1847 - LOWEST_POINT_M)
+
+    if unit_designation == 'imperial':
+        volume_unit = 'AF'
+        elevation_unit = 'ft'
+        area_unit = 'mi2'
+        predicted_sa *= MI2_PER_KM2
+        predicted_depth *= FEET_PER_METER
+        predicted_volume *= ACRE_FEET_PER_KM3
+    else:
+        volume_unit = 'km3'
+        elevation_unit = 'm'
+        area_unit = 'km2'
+
+    output = html.Ul(
+        children=[
+            html.Li(
+                children=[
+                    'Predicted maximum depth: ',
+                    html.Strong(f'{predicted_depth:.1f}{elevation_unit}'),
+                    f', {percent_elevation:.0f}% of the average since 1847.'
+                ]
+            ),
+            html.Li(
+                children=[
+                    'Predicted volume: ',
+                    html.Strong(f'{predicted_volume:.1f}{volume_unit}'),
+                    f', {percent_volume:.0f}% of the average since 1847.'
+                ]
+            ),
+            html.Li(
+                children=[
+                    'Predicted surface area: ',
+                    html.Strong(f'{predicted_sa:.0f}{area_unit}'),
+                    f', {percent_sa:.0f}% of the average since 1847.'
+                ]
+            ),
+        ]
+    )
+
+    return html.Div(output)
 
 def TempToEvap(temperature_delta: float, unit: str) -> Policy:
     C_PER_F = 5/9
@@ -641,7 +704,7 @@ app.layout = html.Div([
         children=[
             html.Img(className='top-image',src='assets/top_bar_image.png'),
             html.H1('Great Salt Lake Model Dashboard', id='main-title'),
-            html.H2(html.I('How policy decisions of today will effect the lake of tomorrow')),
+            html.H3(html.I('How policy decisions of today will effect the lake of tomorrow')),
             html.Img(className='top-image',src='assets/top_bar_image.png'),
         ]
     ),
@@ -651,178 +714,215 @@ app.layout = html.Div([
             html.Div('GSL Dashboard'),
             html.Ul(
                 children=[
-                    html.Li(html.A('Introduction',href='#introduction')),
-                    html.Li(html.A('Model',href='#model-options')),
-                    html.Li(html.A('Output',href='#model-output')),
-                    html.Li(html.A('About the Data',href='#model-output')),
-                    html.Li(html.A('About the Model',href='#model-output')),
-                    html.Li(html.A('Sources',href='#model-output')),
+                    html.Li(html.A('Inputs',href='#model-input-title')),
+                    html.Li(html.A('Output',href='#model-output-title')),
+                    html.Li(html.A('Model Writeup',href='#model-writeup-title')),
+                    html.Li(html.A('Sources',href='#sources-title')),
                 ]   
             ),
         ]
     ),
     html.Div(
-        id='body-section',
+        id='introduction', 
+        className='center-column-content',
+        children=[ParseMarkedownText('data/markdown_text/opening_blurb.txt')],
+    ),
+    html.Div(
+        id='model-options',
+        className='center-column-content',
         children=[
-            html.Div(id='introduction', children=[ParseMarkedownText('data/markdown_text/opening_blurb.txt')]),
+            html.H2('Model Inputs', id='model-input-title'),
+            html.Hr(),
+            html.H3('Policy Options'),
             html.Div(
-                id='model-options',
-                children=[
-                    html.H2('Policy Options'),
-                    html.Div(
-                        id='policy-sliders',
-                        children = slider_policy_list
-                    ),
-                    html.Div(
-                        id='policy-checklist-container',
-                        children = [
-                            dcc.Checklist(
-                                id='policy-checklist',
-                                options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies if not x.slider],
-                                value=[],
-                                labelStyle={'display': 'block','text-indent': '-1.25em'},
-                                style={'position':'relative','left': '1em'}
-                            ),
-                        ]
-                    ),
-                    html.Div(
-                        id='sandbox-sliders',
-                        children=[
-                            html.H2('Adjust Component Data'),
-                            html.Br(),
-                            html.Strong('Adjust rainfall directly onto the lake\'s surface'),
-                            dcc.Slider(
-                                id = 'rain-slider',
-                                min = -100,
-                                max = 100,
-                                value = 0,
-                                marks = {
-                                    -100: '100% less rain (No rain)', 
-                                    -50: '50% less rain',
-                                    0: 'No change',
-                                    50: '50% more rain',
-                                    100: {'label':'100% more rain (Double rain)', 'style':{'right':'-200px'}}
-                                },
-                                tooltip={
-                                    'placement':'bottom'
-                                }
-                            ),
-                            html.Strong('Adjust human water consumption'),
-                            dcc.Slider(
-                                id = 'human-consumption-slider',
-                                min = -100,
-                                max = 100,
-                                value = 0,
-                                marks = {
-                                    -100: '100% less consumption (No humans)',
-                                    -50: '50% less consumption',
-                                    0: 'No change',
-                                    50: '50% more consumption',
-                                    100: {'label':'100% more consumption (Double consumption)', 'style':{'right':'-200px'}},
-                                },
-                                tooltip={
-                                    'placement':'bottom'
-                                }
-                            ),
-                            html.Strong('Adjust river flow before human consumption'),
-                            dcc.Slider(
-                                id = 'streamflow-slider',
-                                min = -100,
-                                max = 100,
-                                marks = {
-                                    -100: '100% less streamflow (No streamflow)',
-                                    -50: '50% less streamflow',
-                                    0: 'No change',
-                                    50: '50% more streamflow',
-                                    100: {'label':'100% more streamflow (Double streamflow)', 'style':{'right':'-200px',}},
-                                },
-                                value = 0,
-                                tooltip={
-                                    'placement':'bottom'
-                                }
-                            ),
-                            html.Span(
-                                id = 'temperature-slider-parent',
-                                children = [
-                                    html.Strong('Adjust average temperature'),
-                                    dcc.Slider(
-                                        id = 'temperature-slider',
-                                        min = -5,
-                                        max = 5,
-                                        value = 0,
-                                        step = 0.1,
-                                        tooltip={'placement':'bottom'},
-                                    ),
-                                ],
-                                style={'display': 'block'}
-                            ),
-                            html.Span(
-                                children = [
-                                html.Strong('How many years in the future to predict'),
-                                    dcc.Slider(
-                                        id = 'years-forward-slider',
-                                        min = 20,
-                                        max = 100,
-                                        value = 30,
-                                        step = 10,
-                                        marks = {
-                                            20: '20 years forward',
-                                            40: '40 years forward',
-                                            60: '60 years forward',
-                                            80: '80 years forward',
-                                            100: {'label':'100 years forward', 'style':{'right':'-200px'}},
-                                        },
-                                        tooltip={'placement':'bottom'},
-                                    ),
-                                ],
-                            style={'display': 'block'}
-                            ),
-                        ]
-                    ),
-                    dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
-                    html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
-                ]
+                id='policy-sliders',
+                children = slider_policy_list
             ),
             html.Div(
-                id='model-output',
-                children=[
-                    html.Div(
-                        id='line-graph',
-                        children=[
-                            html.H2('Graph of predicted elevation'),
-                            dcc.Loading(dcc.Graph(id='output-graph')),
-                        ]
-                    ),
-                    html.Div(id='predicted-image',
-                        children = [
-                            html.H2('Predicted surface area'),
-                            dcc.Loading(html.Div(id='lake-predicted-image', style={'max-width': '500px'}))
-                        ]
-                    ),
-                    html.Div(
-                        id='written-effects-container',
-                        children = [
-                            html.H2('Predicted effects based on policy choices:'),
-                            dcc.Loading(html.Div(id='written-effects')),
-                        ]
+                id='policy-checklist-container',
+                children = [
+                    dcc.Checklist(
+                        id='policy-checklist',
+                        options=[{'label': x.checklist_label, 'value': x.title} for x in Policy.all_policies if not x.slider],
+                        value=[],
+                        labelStyle={'display': 'block','text-indent': '-1.25em'},
+                        style={'position':'relative','left': '1em'}
                     ),
                 ]
             ),
             html.Div(
-                id='writeup-under-the-model',
+                id='sandbox-sliders',
                 children=[
-                    ParseMarkedownText('data/markdown_text/introduction_markdown.txt'),
-                    ParseMarkedownText('data/markdown_text/about_the_policies_markdown.txt'),
-                    ParseMarkedownText('data/markdown_text/about_the_effects_markdown.txt'),
-                    ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
-                    ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
-                    html.Div(id='works-cited',children=[ParseMarkedownText('data/markdown_text/works_cited.txt')]),
-                    dcc.Graph(id='sankey-diagram'),
-                    dcc.Graph(id='consumptive-use-sunburst'),
+                    html.H3('Component Options'),
+                    html.Br(),
+                    html.Strong('Adjust rainfall directly onto the lake\'s surface'),
+                    dcc.Slider(
+                        id = 'rain-slider',
+                        min = -100,
+                        max = 100,
+                        value = 1,
+                        marks = {
+                            -100: '100% less rain (No rain)', 
+                            -50: '50% less rain',
+                            0: 'No change',
+                            50: '50% more rain',
+                            100: {'label':'100% more rain (Double rain)', 'style':{'right':'-200px'}}
+                        },
+                        tooltip={
+                            'placement':'bottom'
+                        }
+                    ),
+                    html.Strong('Adjust human water consumption'),
+                    dcc.Slider(
+                        id = 'human-consumption-slider',
+                        min = -100,
+                        max = 100,
+                        value = 0,
+                        marks = {
+                            -100: '100% less consumption (No humans)',
+                            -50: '50% less consumption',
+                            0: 'No change',
+                            50: '50% more consumption',
+                            100: {'label':'100% more consumption (Double consumption)', 'style':{'right':'-200px'}},
+                        },
+                        tooltip={
+                            'placement':'bottom'
+                        }
+                    ),
+                    html.Strong('Adjust river flow before human consumption'),
+                    dcc.Slider(
+                        id = 'streamflow-slider',
+                        min = -100,
+                        max = 100,
+                        marks = {
+                            -100: '100% less streamflow (No streamflow)',
+                            -50: '50% less streamflow',
+                            0: 'No change',
+                            50: '50% more streamflow',
+                            100: {'label':'100% more streamflow (Double streamflow)', 'style':{'right':'-200px',}},
+                        },
+                        value = -16,
+                        tooltip={
+                            'placement':'bottom'
+                        }
+                    ),
+                    html.Span(
+                        id = 'temperature-slider-parent',
+                        children = [
+                            html.Strong('Adjust average temperature'),
+                            dcc.Slider(
+                                id = 'temperature-slider',
+                                min = -5,
+                                max = 5,
+                                value = 1.8,
+                                step = 0.1,
+                                tooltip={'placement':'bottom'},
+                            ),
+                        ],
+                        style={'display': 'block'}
+                    ),
+                    html.Span(
+                        children = [
+                        html.Strong('How many years in the future to predict'),
+                            dcc.Slider(
+                                id = 'years-forward-slider',
+                                min = 20,
+                                max = 100,
+                                value = 30,
+                                step = 10,
+                                marks = {
+                                    20: '20 years forward',
+                                    40: '40 years forward',
+                                    60: '60 years forward',
+                                    80: '80 years forward',
+                                    100: {'label':'100 years forward', 'style':{'right':'-200px'}},
+                                },
+                                tooltip={'placement':'bottom'},
+                            ),
+                        ],
+                    style={'display': 'block'}
+                    ),
+                ]
+            ),
+            dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
+            html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
+            html.H2('Model Output', id='model-output-title'),
+             html.Hr(),
+        ]
+    ),
+
+    html.Div(
+        id='model-output',
+        children=[
+            html.Div(
+                id='line-graph',
+                className='output-box',
+                children=[
+                    html.H3('Great Salt Lake\'s historic and predicted elevation (five-year rolling average):', className='output-title'),
+                    dcc.Loading(dcc.Graph(id='output-graph')),
+                ]
+            ),
+            html.Div(
+                id='right-column',
+                children=[
+                    html.Div(
+                        id='predicted-image',
+                        className='output-box',
+                        children = [
+                            html.H3('Predicted surface area:',className='output-title'),
+                            dcc.Loading(html.Div(id='lake-predicted-image')),
+                            html.I('The black line is the shoreline of the average natural lake level of 1282m (4207ft).'),
+                        ]
+                    ),
+                    html.Div(
+                        id='new-lake-stats-container',
+                        className='output-box',
+                        children = [
+                            html.H3('New lake statistics:', className='output-title'),
+                            dcc.Loading(html.Div(id='new-lake-stats')),
+                        ]
+                    ),
+                ]
+            ),
+            html.Div(
+                id='written-effects-container',
+                className='output-box',
+                children = [
+                    html.H3('Predicted effects based on policy choices:', className='output-title'),
+                    dcc.Loading(html.Div(id='written-effects')),
                 ]
             ),
         ]
     ),
+    html.Div(
+        id='writeup-under-the-model',
+        className='center-column-content',
+        children=[
+            html.H2('Writeup', id='model-writeup-title'),
+            html.Hr(),
+            ParseMarkedownText('data/markdown_text/introduction_markdown.txt'),
+            dcc.Graph(
+                className='writeup-charts',
+                figure=(px.scatter(full_lake.tail(40), x='utah_population_millions', y='net_consumption', trendline='ols',
+                    labels= {
+                        'utah_population_millions': 'Utah Population (millions)',
+                        'net_consumption': 'Total Water Consumption (km3/yr)'
+                    },
+                    title='Relationship between the population of Utah and water consumption, 1973-2013'
+                ))
+            ),
+            ParseMarkedownText('data/markdown_text/about_the_policies_markdown.txt'),
+            ParseMarkedownText('data/markdown_text/about_the_effects_markdown.txt'),
+            ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
+            ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
+            html.H2('Sources', id='sources-title'),
+            html.Hr(),
+            html.Div(id='works-cited',children=[ParseMarkedownText('data/markdown_text/works_cited.txt')]),
+            dcc.Graph(id='sankey-diagram'),
+            dcc.Graph(id='consumptive-use-sunburst'),
+        ]
+    ),
+
 
 ])
 
@@ -858,6 +958,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
     Output('output-graph','figure'),
     Output('lake-predicted-image','children'),
     Output('written-effects','children'),
+    Output('new-lake-stats','children'),
     Input('run-model-button', 'n_clicks'),
     State('policy-checklist','value'),
     State('rain-slider','value'),
@@ -930,8 +1031,9 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake, units)
     lake_picture = RetrieveImage(lr_average_elevation)
     written_effects = CreateWrittenEffects(lr_average_elevation, applied_policies, bath, units, years_forward)
+    new_lake_stats = NewLakeStats(lr_average_elevation, bath, units)
 
-    return line_graph, lake_picture, written_effects
+    return line_graph, lake_picture, written_effects, new_lake_stats
 
 
 @app.callback(

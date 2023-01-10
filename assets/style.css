@@ -17,6 +17,14 @@ li {
     line-height: 1.2em;
     margin: 1rem 0rem 1rem 0rem;
 }
+h2 {
+    scroll-margin-top: 3rem;
+    font-variant: small-caps;
+    margin-bottom: 0;
+}
+hr {
+    color: blue;
+}
 
 /* Specific sections */
 /* Header */
@@ -34,7 +42,7 @@ li {
     font-size: clamp(40px, 10vw, 70px);
     margin: 0;
 }
-#page-topper > h2 {
+#page-topper > h3 {
     font-weight: normal;
     text-align: center;
     margin: 0;
@@ -84,12 +92,66 @@ li {
     padding: 1em 2.5em; 
     max-width: 1000px;
     margin: auto;
+    background-color: white;
+}
+.center-column-content {
+    padding: 1em 2.5em; 
+    max-width: 1000px;
+    margin: auto;
+    background-color: white;
+}
+.writeup-charts {
+    max-width: 800px;
+    background-color: pink;
+    margin: auto;
+}
+#model-options {
+    padding-top: 0;
+}
+#introduction {
+    padding: 0;
+}
+
+/* Model Output Section */
+#model-output {
+    display: grid;
+    gap: 1.5rem;
+    margin-left: 1.5rem;
+    margin-right: 1.5rem;
+    max-width: 1600px;
+    margin: auto;
+    padding-left: 2.5em;
+    padding-right: 2.5em;
+}
+.output-box {
+    background-color: rgb(234, 255, 255);
+    padding: 1rem;
+    border-radius: 0.5rem;
+    box-shadow: .1rem .1rem .2rem rgb(160, 160, 160);
+}
+.output-title {
+    margin-top: 0;
+    margin-bottom: 1rem;
+}
+#right-column {
+    grid-row: span 2;
+    grid-column: 2;
+    display: flex;
+    flex-direction: column; 
+    justify-content: center;
+    gap: 1.5rem;
+    width: auto;
 }
 #written-lake-effects-output > ul > li {
     margin: 0.5rem 0rem 0.5rem 0rem;
 }
+#new-lake-stats > div > ul > li {
+    margin: 0.5rem 0rem 0.5rem 0rem;
+}
+
 #works-cited {
     text-indent: -2rem;
+    padding-left: 2rem;
     margin-top: 0;
     margin-bottom: 0;
 }
