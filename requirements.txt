@@ -1,5 +1,5 @@
 gunicorn
-pandas==1.5.2
+pandas
 statsmodels
 dash==2.7.0
 dash-extensions==0.1.8
