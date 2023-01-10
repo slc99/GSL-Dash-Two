@@ -1,5 +1,6 @@
 gunicorn
 pandas
+statsmodels
 dash==2.7.0
 dash-extensions==0.1.8
 dataretrieval==0.7
