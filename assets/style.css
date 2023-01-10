@@ -102,8 +102,10 @@ hr {
 }
 .writeup-charts {
     max-width: 800px;
-    background-color: pink;
     margin: auto;
+}
+.writeup-charts > i {
+    font-size: smaller;
 }
 #model-options {
     padding-top: 0;

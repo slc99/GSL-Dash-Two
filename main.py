@@ -386,67 +386,53 @@ def RetrieveImage(elevation: float) -> html.Img:
     image_path = f'/assets/gsl_{closest_half_meter}.png'
     return html.Img(id='lake-image',src=image_path)
 
-def CreateSankeyDiagram(units: str) -> go.Figure:
-    labels = ['Streamflow','Bear River','Weber River','Jordan River','Groundwater','Direct Percipitation','Total Water In','Mineral Extraction','Evaporation',
-        'Lake Water Lost','Total Water Out','Other Streams']
+def CreateSankeyDiagram() -> go.Figure:
 
-    ACRE_FEET_PER_KM3 = 810714
-    
-    # Data is average from 1963 to 2022. Mineral extraction data is from 1994 to 2014. Other stream data is assumed to be linearly dependent upon the other three streams
-    # lame these are hard coded in but what can you do
-    km3_per_year_values = [1.59, 0.377, 0.52, 2.63, 0.09, 1.47, 0.19, 4.25, 4.19, 0.25, 0.14]
+    path = 'data/sankey_dict.pkl'
+    with open(path,'rb') as handle:
+        sankey_dict = pickle.load(handle)
 
-    if units == 'metric':
-        volume_unit = 'km3/yr'
-        values = km3_per_year_values
-    else:
-        volume_unit = 'AF/yr'
-        values = [x * ACRE_FEET_PER_KM3 for x in km3_per_year_values]
+    link_value_list = list(sankey_dict.values())
+    link_value_list.remove(sankey_dict['Total Water Out'])
+
+    volume_unit = 'km3'
 
     fig = go.Figure(
-        data=go.Sankey(
+        data = go.Sankey(
             arrangement = "snap",
             valuesuffix = volume_unit,
             node = dict(
-                label = labels,
-                x = [0.25, 0, 0, 0, 0.25, 0.25, 0.5, 1, 1, 0.5, 0.75, 0],
-                y = [0.5] * 10,
-                # y = [1, 1, 0.9, 0.8, 0.8, 0.9, 1, 0.9, 1, 0.9, 1, 0.7],
+                label = list(sankey_dict.keys()),
+                x = [0.25, 0, 0, 0, 0.25, 0.25, 0, 0.5, 1, 1, 0.7, 0.5],
+                y = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
                 hovertemplate = "%{label}"
             ),
             link = dict(
-                source = [1, 2, 3, 0, 4, 5, 10, 10, 6, 9, 11],
-                target = [0, 0, 0, 6, 6, 6, 7, 8, 10, 10, 0],
-                value = values,
-            ),
-        )
+                source = [0, 1, 2, 3, 4, 5, 6, 7, 10, 10, 11],
+                target = [7, 0, 0, 0, 7, 7, 0, 10, 8, 9, 10],
+                value = link_value_list,            
+            )
+        ),
     )
-
+    fig.update_layout(title='Yearly flow of water in and out of the Great Salt Lake (2003-2013)')
     return fig
 
-def CreateConsumptiveUseSunburst(unit: str) -> px.pie:
-    
-    ACRE_FEET_PER_KM3 = 810714
-
-    consumptive_average = pd.read_pickle('data/pie_chart_pickle.pkl')
-
-    if unit == 'imperial':
-        volume_unit = 'acre feet'
-        consumptive_average['Consumption (km3/yr)'] *= ACRE_FEET_PER_KM3
-    else:
-        volume_unit = 'km3'
+def CreateConsumptiveUseSunburst() -> px.pie:
+    consumptive_average = pd.read_pickle('data/pie_chart_df.pkl')
+    volume_unit = 'km3'
 
     consumptive_average.rename(columns={'Consumption (km3/yr)': f'Consumption ({volume_unit}/yr)'},inplace=True)
 
     pie_chart = px.pie(
-            consumptive_average, 
-            values=f'Consumption ({volume_unit}/yr)',
-            names='Consumption category',
-            hover_name='Consumption category',
-            hole=0.5,
+        consumptive_average, 
+        values=f'Consumption ({volume_unit}/yr)',
+        names='Consumption Category',
+        hover_name='Consumption Category',
+        hole=0.5,
+        title='Average yearly water consumption in the Great Salt Lake Basin (2003-2013)'
     )
-    pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.3f}' +f' {volume_unit}/yr')
-    
+    pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.2f}' +f' {volume_unit}/yr')
+
     return pie_chart
 
 def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, bath: pd.DataFrame, unit_designation: str, years_forward: int) -> html.Div:
@@ -680,6 +666,133 @@ def ParseMarkedownText(text_file_path: str) -> dcc.Markdown:
         content = f.read()
     return dcc.Markdown(content)
 
+def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
+    '''This section is seperated because it is ugly. I do not think that is a good reason'''
+    labels_dict = {
+        'utah_population_millions': 'Utah Population (millions)',
+        'net_consumption': 'Total Water Consumption (km3/yr)',
+        'avg_temp_c': 'Average Yearly Temperature (C)',
+        'evap_km3_per_km2': 'Evaporation Rate (km3/km2/yr)',
+        'y':'Expected Evaporation(km3/yr)',
+        'Elevation':'Elevation (m)',
+        'streamflow_after_consumption':'Streamflow entering the lake',
+        'datetime':'Year',
+        'avg_elevation':'Average Elevation (m)',
+    }
+    forty_year_pop_graph = px.scatter(
+        yearly_lake.tail(40), 
+        x='utah_population_millions', 
+        y='net_consumption', 
+        trendline='ols',
+        labels=labels_dict,
+        title='Relationship between the population of Utah and water consumption, 1973-2013'
+    )
+    evap_temp_graph = px.scatter(
+        yearly_lake.drop(range(1987,1992)), 
+        x='avg_temp_c', 
+        y='evap_km3_per_km2', 
+        trendline='ols',
+        labels=labels_dict,
+        title='Average yearly temperature and evaporation rate, 1964-2013 (excluding 1987-1992)'
+    )
+    evap_elevation_graph = px.line(
+        bath,
+        y=bath['Surface Area'] * yearly_stats['evap_km3_per_km2'],
+        labels=labels_dict,
+        title='Relationship between Great Salt Lake elevation and expected yearly evaporation'
+    )
+    streamflow_year_graph = px.line(
+        yearly_lake.loc[1960:], 
+        y='streamflow_after_consumption',
+        labels=labels_dict,
+        title='Streamflow entering the Great Salt Lake (1964-2021)'
+    )
+    elevation_trend = px.scatter(
+        yearly_lake, 
+        y='avg_elevation', 
+        trendline='ols',
+        labels=labels_dict,
+        title='Average elevation of the Great Salt Lake (1847-2023)'
+    )
+    return html.Section(
+        id='q-and-a',
+        children=[
+            html.H3('Q&A'),
+            html.Strong('Q: Does the model account for Utah\'s growing population?'),
+            html.P('''While counterintuitive, the population of Utah has been uncorrelated with the total rate of water consumption for the last forty years. 
+            This can be seen in the below graph, which shows the most recent forty years of water consumption data plotted against the population of Utah.'''),
+            html.Div(
+                className='writeup-charts',
+                children=[
+                    dcc.Graph(figure=forty_year_pop_graph),
+                ]
+            ),
+            html.P('''This counterintuitive result can largely be explained by a few phenomena. First, as the population of Utah has increased, 
+            farmland has been replaced by concrete. As cities grow into their surrounding countryside, land that was devoted to growing crops is replaced 
+            by parking lots, homes, and lawns. As a whole, urban areas consume significantly less water per acre than farms do. In addition, efforts to reduce 
+            water usage have helped keep overall water consumption flat. '''),
+            html.P('''Because there is no statistical relationship between population and water consumption, the model does not account for the growing population.'''),
+            html.Strong('Q: How is climate change represented in the model?'),
+            html.P('''Climate change (as controlled through the \'adjust average temperature\' slider)  is integrated by adjusting the evaporation rate of the lake. 
+            As seen below, the evaporation rate is correlated with the average yearly temperature to a statistically significant degree (p < 0.01). By default, 
+            temperature is set to +1.8 C, as this is the predicted warming by 2050 in Utah. '''),
+            html.Div(
+                className='writeup-charts',     
+                children=[
+                    dcc.Graph(figure=evap_temp_graph),
+                    html.I('''Date range was based on data availability. The years 1987 through 1992 were excluded because the West Desert Pumping Project and 
+                    it\'s subsequent backflow are unaccounted for.''')
+                ]
+            ),
+            html.P('''The effect of climate change on precipitation and streamflow is not automatically integrated into the model. However, both can be controlled 
+            through the provided sliders.'''),
+            html.Strong('Q: Isn\'t the lake expected to disappear within five years? Why does the model not show this?'),
+            dcc.Markdown('''Despite a rush of [misleading](https://www.cnn.com/2023/01/06/us/great-salt-lake-disappearing-drought-climate/index.html) 
+            [headlines](https://www.washingtonpost.com/climate-environment/2023/01/06/great-salt-lake-utah-drying-up/) to the contrary, the lake 
+            is not expected to disappear in five years. The [official briefing](https://pws.byu.edu/GSL%20report%202023) states that “if this \[the average since 2020\] 
+            rate of water loss continues, the lake would be on track to disappear in the next five years”. This is a statement of the current rate of decline, 
+            not a prediction of the future decline. The lake disappearing in five years would make a bad prediction for two reasons. First, nearly all water that 
+            leaves the lake is through evaporation (the exception being water drained from the lake for mineral extraction). Because of this, the surface area is 
+            directly related to the rate of water loss. As the water level declines, so does surface area. This in turn reduces the amount of water that is lost per 
+            year, stabilizing the lake level at a new, lower level. This is illustrated in the below graph:'''),
+            html.Div(className='writeup-charts',children=[dcc.Graph(figure=evap_elevation_graph)]),
+            html.P('''Second, the sample size of two years is not large enough to base a prediction on. The below graph shows how widely the rate of streamflow varies 
+            year-to-year. With a standard deviation of 1.6km3, a prediction based on two years of data is unreliable.'''),
+            html.Div(
+                className='writeup-charts',
+                children=[
+                    dcc.Graph(figure=streamflow_year_graph),
+                ]
+            ),
+            html.Strong('Q: What is the difference between water consumption and water use?'),
+            html.P('''Throughout this project, I focus on \'consumptive\' water use. Consumptive use is defined by the US Geographical Survey (USGS) as 
+            "the part of water withdrawn that is evaporated, transpired, incorporated into products or crops, consumed by humans or livestock, or otherwise 
+            not available for immediate use". Non-consumptive use of water  is eventually returned back to the water system. In the Great Salt Lake basin, the 
+            lake ultimately receives all non-consumed water. '''),
+            html.Strong('Q: Why is the predicted elevation flat?'),
+            html.P('''The model can only predict a long-run average. The model does not have the ability to predict weather cycles. Historically, the lake has 
+            fluctuated along a clear, downward sloping trend, pictured below:'''),
+            html.Div(
+                className='writeup-charts',
+                children=[
+                    dcc.Graph(figure=elevation_trend),
+                    html.I('On average, the Great Salt Lake has trended towards losing 1.6cm (0.6in) every year since 1847')
+                ]
+            ),
+            html.P('''Only considering a long-run average has a few disadvantages. The most important is that it underestimates the risk of ecosystem collapse and 
+            other effects that involve specific thresholds. If the long-run average lake level is slightly above a threshold, then the model will not predict the event 
+            happening.. However, the threshold will be crossed when the lake level decreases due to natural weather variations. To account for this, the predicted costs 
+            are not built based on a threshold system, but rather a linear or quadratic relationship between expected cost and lake level. See below for more detail.'''),
+            html.Strong('Q: Do you have any other cool graphs?'),
+            html.P('''Of course. Here is a Sankey diagram that is helpful to understand the underlying dynamics of the Great Salt Lake. The diagram displays how water 
+            enters and leaves the lake over the course of an average year.'''),
+            dcc.Graph(className='writeup-charts',figure=CreateSankeyDiagram()),
+            html.P('''Over the course of an average year, humans consume 1.85km3 (1.5 million acre-feet) of water in the Great Salt Lake Basin. A breakdown of how that 
+            water is consumed is displayed below. '''),
+            dcc.Graph(className='writeup-charts',figure=CreateConsumptiveUseSunburst()),
+        ]
+    )
+
 Policy.instantiate_from_csv('data/policies.csv')
 Effect.instantiate_from_csv('data/elevation_effects.csv')
 yearly_stats = LoadYearlyStats('data/yearly_stats.pkl')
@@ -755,18 +868,18 @@ app.layout = html.Div([
                 children=[
                     html.H3('Component Options'),
                     html.Br(),
-                    html.Strong('Adjust rainfall directly onto the lake\'s surface'),
+                    html.Strong('Adjust direct percipitation onto the lake\'s surface'),
                     dcc.Slider(
                         id = 'rain-slider',
                         min = -100,
                         max = 100,
                         value = 1,
                         marks = {
-                            -100: '100% less rain (No rain)', 
-                            -50: '50% less rain',
+                            -100: '100% less (No percip.)', 
+                            -50: '50% less',
                             0: 'No change',
-                            50: '50% more rain',
-                            100: {'label':'100% more rain (Double rain)', 'style':{'right':'-200px'}}
+                            50: '50% more',
+                            100: {'label':'100% more (Double percip.)', 'style':{'right':'-200px'}}
                         },
                         tooltip={
                             'placement':'bottom'
@@ -779,27 +892,28 @@ app.layout = html.Div([
                         max = 100,
                         value = 0,
                         marks = {
-                            -100: '100% less consumption (No humans)',
-                            -50: '50% less consumption',
+                            -100: '100% less (No water consumption)',
+                            -50: '50% less',
                             0: 'No change',
-                            50: '50% more consumption',
-                            100: {'label':'100% more consumption (Double consumption)', 'style':{'right':'-200px'}},
+                            50: '50% more',
+                            100: {'label':'100% more (Double consumption)', 'style':{'right':'-200px'}},
                         },
                         tooltip={
                             'placement':'bottom'
                         }
                     ),
-                    html.Strong('Adjust river flow before human consumption'),
+                    html.Strong('Adjust river flow before human use'),
                     dcc.Slider(
                         id = 'streamflow-slider',
                         min = -100,
                         max = 100,
                         marks = {
-                            -100: '100% less streamflow (No streamflow)',
-                            -50: '50% less streamflow',
+                            -100: '100% less (No river flow)',
+                            -50: '50% less',
+                            -16: {'label':'5-year average', 'style':{'max-width': '20px', 'margin-left':'-10px'}},
                             0: 'No change',
-                            50: '50% more streamflow',
-                            100: {'label':'100% more streamflow (Double streamflow)', 'style':{'right':'-200px',}},
+                            50: '50% more',
+                            100: {'label':'100% more (Double river flow)', 'style':{'right':'-200px',}},
                         },
                         value = -16,
                         tooltip={
@@ -814,7 +928,7 @@ app.layout = html.Div([
                                 id = 'temperature-slider',
                                 min = -5,
                                 max = 5,
-                                value = 1.8,
+                                value = 3.2, # I do not why this works, but this actually sets a value of 1.8
                                 step = 0.1,
                                 tooltip={'placement':'bottom'},
                             ),
@@ -828,7 +942,7 @@ app.layout = html.Div([
                                 id = 'years-forward-slider',
                                 min = 20,
                                 max = 100,
-                                value = 30,
+                                value = 40,
                                 step = 10,
                                 marks = {
                                     20: '20 years forward',
@@ -900,17 +1014,8 @@ app.layout = html.Div([
         children=[
             html.H2('Writeup', id='model-writeup-title'),
             html.Hr(),
+            QAndASection(full_lake),
             ParseMarkedownText('data/markdown_text/introduction_markdown.txt'),
-            dcc.Graph(
-                className='writeup-charts',
-                figure=(px.scatter(full_lake.tail(40), x='utah_population_millions', y='net_consumption', trendline='ols',
-                    labels= {
-                        'utah_population_millions': 'Utah Population (millions)',
-                        'net_consumption': 'Total Water Consumption (km3/yr)'
-                    },
-                    title='Relationship between the population of Utah and water consumption, 1973-2013'
-                ))
-            ),
             ParseMarkedownText('data/markdown_text/about_the_policies_markdown.txt'),
             ParseMarkedownText('data/markdown_text/about_the_effects_markdown.txt'),
             ParseMarkedownText('data/markdown_text/about_the_data_markdown.txt'),
@@ -918,20 +1023,12 @@ app.layout = html.Div([
             html.H2('Sources', id='sources-title'),
             html.Hr(),
             html.Div(id='works-cited',children=[ParseMarkedownText('data/markdown_text/works_cited.txt')]),
-            dcc.Graph(id='sankey-diagram'),
-            dcc.Graph(id='consumptive-use-sunburst'),
         ]
     ),
-
-
 ])
 
 
-
-
 @app.callback(
-    Output('consumptive-use-sunburst', 'figure'),
-    Output('sankey-diagram', 'figure'),
     Output('temperature-slider','min'),
     Output('temperature-slider','max'),
     Output('temperature-slider','marks'),
@@ -944,15 +1041,29 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
     if unit == 'imperial':
         min = -9
         max = 9
-        marks = {-9: '9\u00B0 f cooler',-4.5: '4.5\u00B0 f cooler',0: 'No change',4.5:'4.5\u00B0 f warmer', 9: {'label':'9\u00B0 f warmer', 'style':{'right':'-200px'}}}
+        marks = {
+            -9: '9\u00B0 f cooler',
+            -4.5: '-4.5\u00B0 f',
+            0: 'No change',
+            3.2: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}},
+            4.5: '+4.5\u00B0 f',
+            9: {'label':'9\u00B0 f warmer', 'style':{'right':'-200px'}}
+        }
         value = cur_temp_value * F_PER_C
     else:
         min = -5
         max = 5
-        marks = {-5: '5\u00B0 C cooler',-2.5: '2.5\u00B0 C cooler',0: 'No change', 2.5:'2.5\u00B0 C warmer', 5: {'label':'5\u00B0 C warmer', 'style':{'right':'-200px'}}}
+        marks = {
+            -5: '5\u00B0 C cooler',
+            -2.5: '-2.5\u00B0 C',
+            0: 'No change', 
+            1.8: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}}, 
+            # 2.5:'2.5\u00B0 C warmer', 
+            2.5: '+2.5\u00B0 C',
+            5: {'label':'5\u00B0 C warmer', 'style':{'right':'-200px'}}}
         value = cur_temp_value / F_PER_C
     
-    return CreateConsumptiveUseSunburst(unit), CreateSankeyDiagram(unit), min, max, marks, value
+    return min, max, marks, value
 
 @app.callback(
     Output('output-graph','figure'),
