@@ -822,7 +822,7 @@ for policy in Policy.slider_policies:
 
 app = Dash(__name__)
 app.title = 'GSL Policy Dashboard'
-# server = app.server
+server = app.server
 
 
 app.layout = html.Div([
@@ -1270,4 +1270,4 @@ def DisplayWaterBuyback(selected):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
