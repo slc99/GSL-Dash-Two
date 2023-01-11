@@ -250,9 +250,9 @@ def AdjustYearlyStats(policies: list, yearly_stats: dict) -> dict:
                 policy.delta_absolute = adjusted_yearly[policy.affected] - new_adjusted
                 adjusted_yearly[policy.affected] = new_adjusted
 
-    #DELETE ME!!!!
-    # adjusted_yearly[DataSchema.total_consumptive_use] = 0
-    #ABOVE THIS
+    # DELETE ME!!!!
+    # adjusted_yearly[DataSchema.total_consumptive_use] = 1.31
+    # ABOVE THIS
 
     adjusted_yearly[DataSchema.streamflow_after_consumption] = (adjusted_yearly[DataSchema.streamflow_before_consumption] 
                                                                 - adjusted_yearly[DataSchema.total_consumptive_use])
@@ -648,29 +648,34 @@ def NewLakeStats(lr_elevation: float, bath: pd.DataFrame, unit_designation: str)
     return html.Div(output)
 
 def TempToEvap(temperature_delta: float, unit: str) -> Policy:
+    '''Based on linear regression'''
     C_PER_F = 5/9
-    EVAP_CHANGE_PER_C = 0.0000959
+    EVAP_CHANGE_PER_C = 0.00010 #should be 0.0001
+    AVG_TEMP_2018_THROUGH_2022 = 11.67
+    INTERCEPT = -0.000075
 
     if unit == 'imperial':
         temperature_delta *= C_PER_F
+
+    evap_rate = INTERCEPT + ((temperature_delta + AVG_TEMP_2018_THROUGH_2022) * EVAP_CHANGE_PER_C)
 
     return Policy(
         title='Temperature Adjustment Slider',
         description='Temperature effects the lake\'s rate of evaporation',
         affected=DataSchema.evap_km3_per_km2,
         affect_type='absolute',
-        delta=(EVAP_CHANGE_PER_C * temperature_delta)
+        delta=(evap_rate)
     )
 
-def ParseMarkedownText(text_file_path: str) -> dcc.Markdown:
+def ParseMarkedownText(text_file_path: str, mathjax: bool=False) -> dcc.Markdown:
     with open(text_file_path, 'r') as f:
         content = f.read()
-    return dcc.Markdown(content)
+    return dcc.Markdown(content, mathjax=mathjax)
 
 def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
     '''This section is seperated because it is ugly. I do not think that is a good reason'''
     labels_dict = {
-        'utah_population_millions': 'Utah Population (millions)',
+        'utah_population_millions': 'Utah Population (thousands)', #whoopsie
         'net_consumption': 'Total Water Consumption (km3/yr)',
         'avg_temp_c': 'Average Yearly Temperature (C)',
         'evap_km3_per_km2': 'Evaporation Rate (km3/km2/yr)',
@@ -696,9 +701,10 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
         labels=labels_dict,
         title='Average yearly temperature and evaporation rate, 1964-2013 (excluding 1987-1992)'
     )
+    AVG_EVAP_RATE_2018_TO_2022 = 0.001153
     evap_elevation_graph = px.line(
         bath,
-        y=bath['Surface Area'] * yearly_stats['evap_km3_per_km2'],
+        y = bath['Surface Area'] * AVG_EVAP_RATE_2018_TO_2022,
         labels=labels_dict,
         title='Relationship between Great Salt Lake elevation and expected yearly evaporation'
     )
@@ -803,6 +809,7 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
 Policy.instantiate_from_csv('data/policies.csv')
 Effect.instantiate_from_csv('data/elevation_effects.csv')
 yearly_stats = LoadYearlyStats('data/yearly_stats.pkl')
+yearly_stats[DataSchema.evap_km3_per_km2] = 0
 bath = pd.read_pickle('data/bath_pickle.pkl')
 full_lake = pd.read_pickle('data/yearly_lake.pkl')
 lake = full_lake[[DataSchema.avg_elevation,DataSchema.avg_sa,DataSchema.avg_volume]]
@@ -815,15 +822,17 @@ for policy in Policy.slider_policies:
 
 app = Dash(__name__)
 app.title = 'GSL Policy Dashboard'
-server = app.server
+# server = app.server
 
 
 app.layout = html.Div([
+    html.Link(rel="preconnect", href="https://fonts.googleapis.com"),
+    html.Link(href="https://fonts.googleapis.com/css2?family=Lato:wght@400;900&display=swap", rel="stylesheet"),
     html.Div(
         id='page-topper',
         children=[
             html.Img(className='top-image',src='assets/top_bar_image.png'),
-            html.H1('Great Salt Lake Model Dashboard', id='main-title'),
+            html.H1('Great Salt Lake Policy Dashboard', id='main-title'),
             html.H3(html.I('How policy decisions of today will effect the lake of tomorrow')),
             html.Img(className='top-image',src='assets/top_bar_image.png'),
         ]
@@ -837,7 +846,6 @@ app.layout = html.Div([
                     html.Li(html.A('Inputs',href='#model-input-title')),
                     html.Li(html.A('Output',href='#model-output-title')),
                     html.Li(html.A('Q&A',href='#q-and-a-title')),
-                    html.Li(html.A('Key Results',href='#key-results-title')),
                     html.Li(html.A('Model Writeup',href='#model-writeup-title')),
                     html.Li(html.A('About Me',href='#about-me-title')),
                 ]   
@@ -886,7 +894,7 @@ app.layout = html.Div([
                         marks = {
                             -100: '100% less (No percip.)', 
                             -50: '50% less',
-                            0: 'Long-run average',
+                            0: {'label':'Long-run average, 5-year average', 'style':{'max-width': '120px'}},
                             50: '50% more',
                             100: {'label':'100% more (Double percip.)', 'style':{'right':'-200px'}}
                         },
@@ -920,7 +928,7 @@ app.layout = html.Div([
                             -100: '100% less (No river flow)',
                             -50: '50% less',
                             -16: {'label':'5-year average', 'style':{'max-width': '20px', 'margin-left':'-10px'}},
-                            0: 'Long-run average',
+                            0: {'label':'Long-run average', 'style':{'max-width': '60px'}},
                             50: '50% more',
                             100: {'label':'100% more (Double river flow)', 'style':{'right':'-200px',}},
                         },
@@ -946,7 +954,7 @@ app.layout = html.Div([
                     ),
                     html.Span(
                         children = [
-                        html.Strong('How many years in the future to predict'),
+                        html.Strong('Years into the future to predict'),
                             dcc.Slider(
                                 id = 'years-forward-slider',
                                 min = 20,
@@ -968,6 +976,7 @@ app.layout = html.Div([
                 ]
             ),
             dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
+            html.Br(),
             html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
             html.H2('Model Output', id='model-output-title'),
              html.Hr(),
@@ -1026,13 +1035,13 @@ app.layout = html.Div([
             QAndASection(full_lake),
             html.H2('Writeup',id='model-writeup-title'),
             html.Hr(),
-            ParseMarkedownText('data/markdown_text/writeup.txt'),
-            html.H2('Key Results',id='key-results-title'),
-            html.Hr(),
+            ParseMarkedownText('data/markdown_text/writeup.txt',mathjax=True),
+            # a seperate div is required because of the special hanging line indent.
+            html.Div(ParseMarkedownText('data/markdown_text/works-cited.txt'),id='works-cited'), 
             html.P('Lake needs more water'),
             html.H2('About Me',id='about-me-title'),
             html.Hr(),
-            html.P('Whats up, its ya boy, back at it again with another minecraft tips and tricks tutorial')
+            ParseMarkedownText('data/markdown_text/about_me.txt'),
         ]
     ),
 ])
@@ -1054,7 +1063,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
         marks = {
             -9: '9\u00B0 f cooler',
             -4.5: '-4.5\u00B0 f',
-            0: 'Recent average',
+            0: '5-year average',
             3.2: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}},
             4.5: '+4.5\u00B0 f',
             9: {'label':'9\u00B0 f warmer', 'style':{'right':'-200px'}}
@@ -1066,8 +1075,8 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
         marks = {
             -5: '5\u00B0 C cooler',
             -2.5: '-2.5\u00B0 C',
-            0: 'Recent average', 
-            1.8: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}}, 
+            0: '5-year average', 
+            1.8: {'label':'Predicted warming by 2050', 'style':{'max-width': '100px', 'margin-left':'-20px'}}, 
             # 2.5:'2.5\u00B0 C warmer', 
             2.5: '+2.5\u00B0 C',
             5: {'label':'5\u00B0 C warmer', 'style':{'right':'-200px'}}}
@@ -1261,4 +1270,4 @@ def DisplayWaterBuyback(selected):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)

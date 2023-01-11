@@ -1,4 +1,28 @@
 /* General styling */
+:root {
+    --ff-primary: 'Lato',serif;
+    --ff-secondary: 'Source Code Pro', monospace;
+
+    --fw-reg: 300;
+    --fw-bold: 900;
+
+    --clr-bg: white;
+    --clr-text: black;
+    --clr-accent: rgb(234, 255, 255);
+
+    --fs-h1: 3rem;
+    --fs-h2: 2.25rem;
+    --fs-h3: 12.5rem;
+    --fs-body: 1rem;
+}
+
+* {
+    font-family: 'Lato',serif;
+}
+strong {
+    font-weight: 900;
+    letter-spacing: 0.025rem;
+}
 html {
     scroll-behavior: smooth;
     margin: 0;
@@ -39,7 +63,7 @@ hr {
 }
 #main-title {
     text-align: center;
-    font-size: clamp(40px, 10vw, 70px);
+    font-size: clamp(30px, 10vw, 60px);
     margin: 0;
 }
 #page-topper > h3 {
@@ -50,7 +74,7 @@ hr {
 
 /* Sticky navigation bar */
 #nav-bar {
-    background-color: rgb(236, 251, 255);
+    background-color: rgb(200, 223, 253);
     display: flex;
     justify-content: space-between;
     position: sticky;
@@ -128,7 +152,7 @@ hr {
     padding-right: 2.5em;
 }
 .output-box {
-    background-color: rgb(234, 255, 255);
+    background-color:  rgb(200, 223, 253);
     padding: 1rem;
     border-radius: 0.5rem;
     box-shadow: .1rem .1rem .2rem rgb(160, 160, 160);
