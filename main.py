@@ -939,7 +939,7 @@ for policy in Policy.slider_policies:
 app = Dash(__name__)
 app.title = 'GSL Policy Dashboard'
 # changeme12
-# server = app.server
+server = app.server
 
 
 app.layout = html.Div([
@@ -1092,7 +1092,7 @@ app.layout = html.Div([
                 ]
             ),
             # changeme12
-            dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
+            dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'imperial'),
             html.Br(),
             html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
             html.H2('Model Output', id='model-output-title'),
@@ -1393,4 +1393,5 @@ def DisplayWaterBuyback(selected):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    #changeme12
+    app.run_server(debug=False)
