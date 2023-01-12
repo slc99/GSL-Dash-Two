@@ -1,21 +1,4 @@
 /* General styling */
-:root {
-    --ff-primary: 'Lato',serif;
-    --ff-secondary: 'Source Code Pro', monospace;
-
-    --fw-reg: 300;
-    --fw-bold: 900;
-
-    --clr-bg: white;
-    --clr-text: black;
-    --clr-accent: rgb(234, 255, 255);
-
-    --fs-h1: 3rem;
-    --fs-h2: 2.25rem;
-    --fs-h3: 12.5rem;
-    --fs-body: 1rem;
-}
-
 * {
     font-family: 'Lato',serif;
 }
@@ -136,9 +119,15 @@ hr {
 }
 #opening-blurb {
     padding: 0;
-    line-height: 2rem;
-    font-style: italic;
+    /* max-width: 800px; */
 }
+
+#opening-blurb > div > p {
+    line-height: 1.8rem;
+    font-size: 1.4rem;
+    /* font-style: italic; */
+}
+
 
 /* Model Output Section */
 #model-output {
@@ -175,6 +164,16 @@ hr {
 }
 #new-lake-stats > div > ul > li {
     margin: 0.5rem 0rem 0.5rem 0rem;
+}
+
+/* Writeup formatting */
+
+/* Really(!!) bad way of formatting LaTex font*/
+#writeup-text > div > p > span {
+    font-size: 0.9rem;
+}
+#writeup-text > div > ul > li > span {
+    font-size: 0.9rem;
 }
 
 #works-cited {

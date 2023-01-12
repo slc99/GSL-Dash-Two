@@ -1,3 +1,8 @@
+'''
+Change all code tagged with 'changeme12' before pushing to server
+'''
+
+
 from dash import Dash, dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 import pandas as pd
@@ -56,7 +61,7 @@ class Policy:
             self.max_to_invest = cost_per_year
         else:
             self.max_to_invest = initial_cost
-        self.checklist_label = html.Span(children=[html.Strong(self.title), html.Br() ,self.description, html.Br()])
+        self.checklist_label = html.Span(children=[html.Strong(self.title),html.Br(),self.description], className='policy-label-span')
         self.id_name = title.replace(' ','-').lower()
         self.selected_cost = selected_cost
 
@@ -80,7 +85,7 @@ class Policy:
             id=id_name + '-checklist',
             options = [{'label': self.checklist_label, 'value': self.title}],
             value = [],
-            labelStyle={'display': 'block','text-indent': '-1.25em'},
+            labelStyle={'display': 'block','text-indent': '-1.25em','margin-bottom':'0.2rem'},
             style={'position':'relative','left': '1em'}
         )
     
@@ -295,90 +300,199 @@ def GSLPredictor(years_forward: int, yearly_stats: dict,
         
     return predictions
 
+# def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
+#     '''
+#     Creates a line graph of the past elevation and predicted elevation.
+#     '''
+#     MEAN_ELEVATION_BEFORE_1847 = 1282.3
+#     METERS_TO_FEET = 3.28084
+#     historic_avg_elevation = round(lake[DataSchema.avg_elevation].mean(),2)
+
+#     prediction['YYYY'] = prediction['YYYY'].astype('int64')
+#     adj_pred = prediction.set_index('YYYY')
+#     combined = pd.concat([lake[[DataSchema.avg_elevation]], adj_pred])
+
+#     print(combined)
+
+#     temp = pd.concat([combined.iloc[len(lake)-rolling:len(lake)][DataSchema.avg_elevation],combined.iloc[len(lake):]['Elevation Prediction']])
+#     combined['Elevation Prediction'] = temp
+#     combined['Year'] = combined.index
+
+#     if units == 'imperial':
+#         elevation_unit = 'ft'
+#         combined['Elevation Prediction'] *= METERS_TO_FEET
+#         lr_average_elevaton *= METERS_TO_FEET
+#         combined[DataSchema.avg_elevation] *= METERS_TO_FEET
+#         MEAN_ELEVATION_BEFORE_1847 *= METERS_TO_FEET
+#         historic_avg_elevation *= METERS_TO_FEET
+#         digits = 0
+#     else:
+#         elevation_unit = 'm'
+#         digits = 1
+
+#     colors = ['blue','red']
+
+#     fig = px.scatter(
+#         combined, 
+#         y=[DataSchema.avg_elevation,'Elevation Prediction'],
+#         x='Year',
+#         trendline='rolling',
+#         trendline_options=dict(window=rolling),
+#         color_discrete_sequence=colors,
+#         labels = {
+#             'value':f'Lake Elevation ({elevation_unit})',
+#         },
+#     )
+
+#     start_date = 1870
+#     end_date = combined[-1:].index[0]
+#     fig.update_layout(
+#         xaxis_range=[start_date,end_date],
+#         margin={
+#             'l':20,
+#             'r':20,
+#             'b':20,
+#             't':20 
+#         }
+#     )
+
+#     #only show trendlines:
+#     fig.data = [t for t in fig.data if t.mode == 'lines']
+
+#     lr_pos = 'top left'
+#     human_pos = 'top left'
+
+#     fig.add_hline(y=MEAN_ELEVATION_BEFORE_1847, line_dash='dot',
+#                     annotation_text = f'Average Natural Level, {MEAN_ELEVATION_BEFORE_1847:.{digits}f}{elevation_unit}',
+#                     annotation_position = 'top left',
+#                     annotation_font_size = 12,
+#                     annotation_font_color = 'black',
+#     )
+
+#     fig.add_hline(y=historic_avg_elevation, line_dash='dot',
+#                     annotation_text = f'Average Since 1847, {historic_avg_elevation:.{digits}f} {elevation_unit}',
+#                     annotation_position = human_pos,
+#                     annotation_font_size = 12,
+#                     annotation_font_color = colors[0],
+#                     line_color = colors[0],
+#     )
+
+#     fig.add_hline(y=lr_average_elevaton, 
+#                     line_dash='dot',
+#                     annotation_text = f'Long-run Policy Average, {lr_average_elevaton:.{digits}f}{elevation_unit}',
+#                     annotation_position = lr_pos,
+#                     annotation_font_size = 12,
+#                     annotation_font_color = colors[1],
+#                     line_color = colors[1],
+#     )
+
+#     return fig
+
+def RollingAverageColumnGenerator(df: pd.DataFrame, column_name: str, rolling: int=5) -> pd.DataFrame:
+    rolling_column_name = str(rolling) + '_rolling_' + column_name
+    for index, row in df[5:].iterrows():
+        sum_rolling = 0
+        for i in range(1, rolling+1):
+            sum_rolling += df.at[index-i, column_name]
+        df.at[index, rolling_column_name] = sum_rolling / rolling
+    return df
+
+def CreateGraphBasePickle(prediction: pd.DataFrame, lake: pd.DataFrame):
+    '''This needs to be called when the algorithm changes for predicting lake elevation, or when lake elevation data changes'''
+    lake['YYYY_int'] = lake.index.astype(int)
+    prediction['YYYY_int'] = prediction['YYYY'].astype(int)
+    base = pd.concat([prediction.set_index(prediction['YYYY_int']), lake.set_index(lake['YYYY_int'])], axis=1)
+    base['Elevation Prediction'] = base['Elevation Prediction'].fillna(base['avg_elevation'])
+    base_rolling = RollingAverageColumnGenerator(base, 'avg_elevation')
+    base_rolling = RollingAverageColumnGenerator(base, 'Elevation Prediction')
+    base_rolling = base_rolling[['5_rolling_Elevation Prediction','5_rolling_avg_elevation','avg_elevation']]
+    base_rolling.rename(
+        columns={
+            '5_rolling_Elevation Prediction':'rolling_base_prediction',
+            '5_rolling_avg_elevation':'rolling_historic',
+            'avg_elevation':'non_rolling_historic',
+        },
+        inplace=True
+    )
+    base_rolling.to_pickle('data/graph_base.pkl')
+
 def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
     '''
     Creates a line graph of the past elevation and predicted elevation.
     '''
-    prediction['YYYY'] = prediction['YYYY'].astype('int64')
-    adj_pred = prediction.set_index('YYYY')
-
-    MEAN_ELEVATION_BEFORE_1847 = 1282.3
     METERS_TO_FEET = 3.28084
-    historic_avg_elevation = round(lake[DataSchema.avg_elevation].mean(),2)
+    ideal_water_level_range = [1280, 1282]
 
-    combined = pd.concat([lake[[DataSchema.avg_elevation]],adj_pred])
-    temp = pd.concat([combined.iloc[len(lake)-rolling:len(lake)][DataSchema.avg_elevation],combined.iloc[len(lake):]['Elevation Prediction']])
-    combined['Elevation Prediction'] = temp
-    combined['Year'] = combined.index
+    base = pd.read_pickle('data/graph_base.pkl')
+    prediction['YYYY_int'] = prediction['YYYY'].astype(int)
+    graph_data = pd.concat([prediction.set_index(prediction['YYYY_int']),base],axis=1)
+    graph_data['elevation_prediction'] = graph_data['Elevation Prediction'].fillna(graph_data['non_rolling_historic'])
+    graph_data = RollingAverageColumnGenerator(graph_data, 'elevation_prediction')
 
-    if units == 'imperial':
+    if units == 'imperial': 
         elevation_unit = 'ft'
-        combined['Elevation Prediction'] *= METERS_TO_FEET
-        lr_average_elevaton *= METERS_TO_FEET
-        combined[DataSchema.avg_elevation] *= METERS_TO_FEET
-        MEAN_ELEVATION_BEFORE_1847 *= METERS_TO_FEET
-        historic_avg_elevation *= METERS_TO_FEET
+        graph_data['5_rolling_elevation_prediction'] *= METERS_TO_FEET
+        graph_data['rolling_historic'] *= METERS_TO_FEET
+        graph_data['rolling_base_prediction'] *= METERS_TO_FEET
+        ideal_water_level_range = [x * METERS_TO_FEET for x in ideal_water_level_range]
     else:
         elevation_unit = 'm'
+        digits = 1
 
-    colors = ['blue','red']
+    current_year = prediction.at[0,'YYYY_int'] - 1
+    last_predicted_year = prediction['YYYY_int'].iloc[-1]
 
-    fig = px.scatter(
-        combined, 
-        y=[DataSchema.avg_elevation,'Elevation Prediction'],
-        x='Year',
-        trendline='rolling',
-        trendline_options=dict(window=rolling),
-        color_discrete_sequence=colors,
-        labels = {
-            'value':f'Lake Elevation ({elevation_unit})',
-            # 'datetime':'Year'
-        },
-    )
+    past = graph_data.loc[:current_year]
+    future = graph_data.loc[current_year:last_predicted_year]
 
-    start_date = 1870
-    end_date = combined[-1:].index[0]
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatter(
+        x=past.index,
+        y=past['rolling_historic'],
+        name='Elevation',
+        line=dict(color='blue',width=2),
+        hovertemplate= 'Elevation: %{y:.1f}<extra></extra>',
+    ))
+    fig.add_trace(go.Scatter(
+        x=future.index,
+        y=future['5_rolling_elevation_prediction'],
+        name='Prediction Based On Selection',
+        line=dict(color='red',dash='dash',width=2),
+        hovertemplate= 'Selected Prediction: %{y:.1f}<extra></extra>',
+    ))
+    fig.add_trace(go.Scatter(
+        x=future.index,
+        y=future['rolling_base_prediction'],
+        name='Base Elevation Prediction',
+        line=dict(color='green',dash='dash',width=2),
+        hovertemplate= 'Base Prediction: %{y:.1f}<extra></extra>',
+    ))
+
+    START_DATE = 1870
+    end_date = last_predicted_year
+
     fig.update_layout(
-        xaxis_range=[start_date,end_date],
-        margin={
-            'l':20,
-            'r':20,
-            'b':20,
-            't':20 
-        }
+        xaxis_range=[START_DATE,end_date],
+        margin={'l':30,'r':20,'b':30,'t':20 },
+        legend={'orientation':'h', 'yanchor':'bottom','y':-0.22,}, # the y-value must be in [-2,3]. -0.22 works well (idk why)
+        xaxis_title='Year',
+        yaxis_title=f'Elevation ({elevation_unit})'
+    )
+    fig.add_hrect(
+        y0=ideal_water_level_range[0],
+        y1=ideal_water_level_range[1],
+        line_width=0,
+        fillcolor='blue',
+        opacity=0.2,
+        annotation_text='Ideal Water Level',
+        annotation_position='bottom left'
     )
 
-    #only show trendlines:
-    fig.data = [t for t in fig.data if t.mode == 'lines']
 
-    lr_pos = 'top left'
-    human_pos = 'top left'
-
-    fig.add_hline(y=MEAN_ELEVATION_BEFORE_1847, line_dash='dot',
-                    annotation_text = f'Average Natural Level, {MEAN_ELEVATION_BEFORE_1847:.2f}{elevation_unit}',
-                    annotation_position = 'top left',
-                    annotation_font_size = 10,
-                    annotation_font_color = 'black',
-    )
-
-    fig.add_hline(y=historic_avg_elevation, line_dash='dot',
-                    annotation_text = f'Average Since 1847, {historic_avg_elevation:.2f}{elevation_unit}',
-                    annotation_position = human_pos,
-                    annotation_font_size = 10,
-                    annotation_font_color = colors[0],
-                    line_color = colors[0],
-    )
-
-    fig.add_hline(y=lr_average_elevaton, 
-                    line_dash='dot',
-                    annotation_text = f'Long-run Policy Average, {lr_average_elevaton:.2f}{elevation_unit}',
-                    annotation_position = lr_pos,
-                    annotation_font_size = 10,
-                    annotation_font_color = colors[1],
-                    line_color = colors[1],
-    )
 
     return fig
+
 
 def RetrieveImage(elevation: float) -> html.Img:
     ''' Given an a lake elevation, retrieves the matching picture of the lake '''
@@ -433,6 +547,8 @@ def CreateConsumptiveUseSunburst() -> px.pie:
     )
     pie_chart.update_traces(textinfo='percent+label',hovertemplate='<b>%{label}</b><br>Consumption: %{value:.2f}' + f' {volume_unit}/yr')
     pie_chart.update_traces(textposition='outside')
+
+    pie_chart.update_layout(showlegend=False)
 
     return pie_chart
 
@@ -530,7 +646,7 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
     written_number ={
         20: 'twenty',
         30: 'thirty',
-        40: 'fourty',
+        40: 'forty',
         50: 'fifty',
         60: 'sixty',
         70: 'seventy',
@@ -631,7 +747,7 @@ def NewLakeStats(lr_elevation: float, bath: pd.DataFrame, unit_designation: str)
             html.Li(
                 children=[
                     'Predicted volume: ',
-                    html.Strong(f'{predicted_volume:.1f}{volume_unit}'),
+                    html.Strong(f'{FormatNumberToPrint(predicted_volume)} {volume_unit}'),
                     f', {percent_volume:.0f}% of the average since 1847.'
                 ]
             ),
@@ -678,7 +794,7 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
         'utah_population_millions': 'Utah Population (thousands)', #whoopsie
         'net_consumption': 'Total Water Consumption (km3/yr)',
         'avg_temp_c': 'Average Yearly Temperature (C)',
-        'evap_km3_per_km2': 'Evaporation Rate (km3/km2/yr)',
+        'evap_km3_per_km2': 'Evaporation Rate (km/yr)',
         'y':'Expected Evaporation(km3/yr)',
         'Elevation':'Elevation (m)',
         'streamflow_after_consumption':'Total streamflow entering the lake (km3)',
@@ -822,7 +938,8 @@ for policy in Policy.slider_policies:
 
 app = Dash(__name__)
 app.title = 'GSL Policy Dashboard'
-server = app.server
+# changeme12
+# server = app.server
 
 
 app.layout = html.Div([
@@ -852,10 +969,10 @@ app.layout = html.Div([
             ),
         ]
     ),
-    html.Div(
+    html.P(
+        ParseMarkedownText('data/markdown_text/opening_blurb.txt'),
         id='opening-blurb', 
         className='center-column-content',
-        children=[ParseMarkedownText('data/markdown_text/opening_blurb.txt')],
     ),
     html.Div(
         id='model-options',
@@ -884,19 +1001,18 @@ app.layout = html.Div([
                 id='sandbox-sliders',
                 children=[
                     html.H3('Component Options'),
-                    html.Br(),
-                    html.Strong('Adjust direct percipitation onto the lake\'s surface'),
+                    html.Strong('Adjust direct precipitation onto the lake\'s surface'),
                     dcc.Slider(
                         id = 'rain-slider',
                         min = -100,
                         max = 100,
                         value = 1,
                         marks = {
-                            -100: '100% less (No percip.)', 
+                            -100: '100% less (No precip.)', 
                             -50: '50% less',
-                            0: {'label':'Long-run average, 5-year average', 'style':{'max-width': '120px'}},
+                            0: {'label':'Long-run average\n5-year average', 'style':{'white-space':'pre-line'}},
                             50: '50% more',
-                            100: {'label':'100% more (Double percip.)', 'style':{'right':'-200px'}}
+                            100: {'label':'100% more (Double precip.)', 'style':{'right':'-200px'}}
                         },
                         tooltip={
                             'placement':'bottom'
@@ -927,8 +1043,8 @@ app.layout = html.Div([
                         marks = {
                             -100: '100% less (No river flow)',
                             -50: '50% less',
-                            -16: {'label':'5-year average', 'style':{'max-width': '20px', 'margin-left':'-10px'}},
-                            0: {'label':'Long-run average', 'style':{'max-width': '60px'}},
+                            -16: {'label':'5-year\naverage', 'style':{'white-space':'pre-line', 'margin-left':'-10px'}},
+                            0: {'label':'Long-run\naverage', 'style':{'white-space':'pre-line'}},
                             50: '50% more',
                             100: {'label':'100% more (Double river flow)', 'style':{'right':'-200px',}},
                         },
@@ -945,7 +1061,7 @@ app.layout = html.Div([
                                 id = 'temperature-slider',
                                 min = -5,
                                 max = 5,
-                                value = 3.2, # I do not why this works, but this actually sets a value of 1.8
+                                value = 3.3, # I do not why this works, but this actually sets a value of 1.8
                                 step = 0.1,
                                 tooltip={'placement':'bottom'},
                             ),
@@ -975,6 +1091,7 @@ app.layout = html.Div([
                     ),
                 ]
             ),
+            # changeme12
             dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'metric'),
             html.Br(),
             html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
@@ -1035,7 +1152,7 @@ app.layout = html.Div([
             QAndASection(full_lake),
             html.H2('Writeup',id='model-writeup-title'),
             html.Hr(),
-            ParseMarkedownText('data/markdown_text/writeup.txt',mathjax=True),
+            html.Div(ParseMarkedownText('data/markdown_text/writeup.txt',mathjax=True),id='writeup-text'),
             # a seperate div is required because of the special hanging line indent.
             html.Div(ParseMarkedownText('data/markdown_text/works-cited.txt'),id='works-cited'), 
             html.P('Lake needs more water'),
@@ -1064,7 +1181,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
             -9: '9\u00B0 f cooler',
             -4.5: '-4.5\u00B0 f',
             0: '5-year average',
-            3.2: {'label':'Predicted warming by 2050', 'style':{'max-width': '120px', 'margin-left':'-20px'}},
+            3.2: {'label':'Predicted warming\nby 2050', 'style':{'white-space':'pre-line', 'margin-left':'-20px'}},
             4.5: '+4.5\u00B0 f',
             9: {'label':'9\u00B0 f warmer', 'style':{'right':'-200px'}}
         }
@@ -1077,7 +1194,6 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
             -2.5: '-2.5\u00B0 C',
             0: '5-year average', 
             1.8: {'label':'Predicted warming by 2050', 'style':{'max-width': '100px', 'margin-left':'-20px'}}, 
-            # 2.5:'2.5\u00B0 C warmer', 
             2.5: '+2.5\u00B0 C',
             5: {'label':'5\u00B0 C warmer', 'style':{'right':'-200px'}}}
         value = cur_temp_value / F_PER_C
@@ -1111,6 +1227,10 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
 def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, temperature_delta: float,
     units: str, slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, 
     slider_7: float, slider_8: float,) -> list:
+
+    # THIS IS A SILLY WORK AROUND TO A WEIRD SLIDER ISSUE. Not sure why I was yelling
+    if _==0:
+        temperature_delta = 1.83
 
     #this is a list of policy objects that are applied to the 'monthly_stats' dataframe
     applied_policies = []
@@ -1157,6 +1277,9 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     prediction = GSLPredictor(years_forward, adjusted_yearly_stats, bath, lake)
     lr_average_elevation = round(prediction.iloc[-1]['Elevation Prediction'], 2)
 
+    # changeme12
+    # this line should only be run when the model is changed and thus the base predictions change
+    # CreateGraphBasePickle(prediction,lake)
 
     line_graph = CreateLineGraph(prediction, lr_average_elevation, lake, units)
     lake_picture = RetrieveImage(lr_average_elevation)
@@ -1270,4 +1393,4 @@ def DisplayWaterBuyback(selected):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
