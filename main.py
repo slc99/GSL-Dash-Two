@@ -504,14 +504,12 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
         volume_unit = 'AF'
         volume_unit_effectivness = 'AF'
         elevation_unit = 'ft'
-        area_unit = 'mi2'
         area_unit_words = 'square miles'
         change_in_sa *= MI2_PER_KM2
     else:
         volume_unit = 'km3'
         volume_unit_effectivness = 'm3'
         elevation_unit = 'm'
-        area_unit = 'km2'
         area_unit_words = 'square kilometers'
     
     # now we form the policy output table
@@ -876,6 +874,7 @@ app.layout = html.Div([
             ),
         ]
     ),
+    html.H2('This site is best viewed on a larger screen.',id='phone-screen-warning'),
     html.P(
         ParseMarkdownText('data/markdown_text/opening_blurb.txt'),
         id='opening-blurb', 
