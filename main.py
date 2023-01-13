@@ -2,7 +2,6 @@
 Change all code tagged with 'changeme12' before pushing to server
 '''
 
-
 from dash import Dash, dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 import pandas as pd
@@ -299,94 +298,6 @@ def GSLPredictor(years_forward: int, yearly_stats: dict,
         predictions.loc[len(predictions.index)] = [cur_date,elevation,cur_date.strftime("%Y")]
         
     return predictions
-
-# def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
-#     '''
-#     Creates a line graph of the past elevation and predicted elevation.
-#     '''
-#     MEAN_ELEVATION_BEFORE_1847 = 1282.3
-#     METERS_TO_FEET = 3.28084
-#     historic_avg_elevation = round(lake[DataSchema.avg_elevation].mean(),2)
-
-#     prediction['YYYY'] = prediction['YYYY'].astype('int64')
-#     adj_pred = prediction.set_index('YYYY')
-#     combined = pd.concat([lake[[DataSchema.avg_elevation]], adj_pred])
-
-#     print(combined)
-
-#     temp = pd.concat([combined.iloc[len(lake)-rolling:len(lake)][DataSchema.avg_elevation],combined.iloc[len(lake):]['Elevation Prediction']])
-#     combined['Elevation Prediction'] = temp
-#     combined['Year'] = combined.index
-
-#     if units == 'imperial':
-#         elevation_unit = 'ft'
-#         combined['Elevation Prediction'] *= METERS_TO_FEET
-#         lr_average_elevaton *= METERS_TO_FEET
-#         combined[DataSchema.avg_elevation] *= METERS_TO_FEET
-#         MEAN_ELEVATION_BEFORE_1847 *= METERS_TO_FEET
-#         historic_avg_elevation *= METERS_TO_FEET
-#         digits = 0
-#     else:
-#         elevation_unit = 'm'
-#         digits = 1
-
-#     colors = ['blue','red']
-
-#     fig = px.scatter(
-#         combined, 
-#         y=[DataSchema.avg_elevation,'Elevation Prediction'],
-#         x='Year',
-#         trendline='rolling',
-#         trendline_options=dict(window=rolling),
-#         color_discrete_sequence=colors,
-#         labels = {
-#             'value':f'Lake Elevation ({elevation_unit})',
-#         },
-#     )
-
-#     start_date = 1870
-#     end_date = combined[-1:].index[0]
-#     fig.update_layout(
-#         xaxis_range=[start_date,end_date],
-#         margin={
-#             'l':20,
-#             'r':20,
-#             'b':20,
-#             't':20 
-#         }
-#     )
-
-#     #only show trendlines:
-#     fig.data = [t for t in fig.data if t.mode == 'lines']
-
-#     lr_pos = 'top left'
-#     human_pos = 'top left'
-
-#     fig.add_hline(y=MEAN_ELEVATION_BEFORE_1847, line_dash='dot',
-#                     annotation_text = f'Average Natural Level, {MEAN_ELEVATION_BEFORE_1847:.{digits}f}{elevation_unit}',
-#                     annotation_position = 'top left',
-#                     annotation_font_size = 12,
-#                     annotation_font_color = 'black',
-#     )
-
-#     fig.add_hline(y=historic_avg_elevation, line_dash='dot',
-#                     annotation_text = f'Average Since 1847, {historic_avg_elevation:.{digits}f} {elevation_unit}',
-#                     annotation_position = human_pos,
-#                     annotation_font_size = 12,
-#                     annotation_font_color = colors[0],
-#                     line_color = colors[0],
-#     )
-
-#     fig.add_hline(y=lr_average_elevaton, 
-#                     line_dash='dot',
-#                     annotation_text = f'Long-run Policy Average, {lr_average_elevaton:.{digits}f}{elevation_unit}',
-#                     annotation_position = lr_pos,
-#                     annotation_font_size = 12,
-#                     annotation_font_color = colors[1],
-#                     line_color = colors[1],
-#     )
-
-#     return fig
 
 def RollingAverageColumnGenerator(df: pd.DataFrame, column_name: str, rolling: int=5) -> pd.DataFrame:
     rolling_column_name = str(rolling) + '_rolling_' + column_name
@@ -1035,7 +946,7 @@ app.layout = html.Div([
                             'placement':'bottom'
                         }
                     ),
-                    html.Strong('Adjust river flow before human use'),
+                    html.Strong('Adjust enviromental river flow (before human diversions)'),
                     dcc.Slider(
                         id = 'streamflow-slider',
                         min = -100,
@@ -1061,7 +972,7 @@ app.layout = html.Div([
                                 id = 'temperature-slider',
                                 min = -5,
                                 max = 5,
-                                value = 3.3, # I do not why this works, but this actually sets a value of 1.8
+                                value = 1.8, # I do not why this works, but this actually sets a value of 1.8
                                 step = 0.1,
                                 tooltip={'placement':'bottom'},
                             ),
@@ -1228,9 +1139,14 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     units: str, slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, 
     slider_7: float, slider_8: float,) -> list:
 
+    # if units == 'imperial':
+    #     temperature_delta *= F_PER_C
     # THIS IS A SILLY WORK AROUND TO A WEIRD SLIDER ISSUE. Not sure why I was yelling
-    if _==0:
-        temperature_delta = 1.83
+    if _ == 0:
+        if units=='metric':
+            temperature_delta = 1.83
+        else:
+            temperature_delta = 3.294
 
     #this is a list of policy objects that are applied to the 'monthly_stats' dataframe
     applied_policies = []
