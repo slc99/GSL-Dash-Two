@@ -95,6 +95,13 @@ hr {
 }
 
 /* Main Section */
+.source-links-a {
+    /* position: relative;
+    bottom: 1ex;
+    font-size: 0.7rem; */
+    text-decoration: none;
+    font-style: italic;
+}
 #body-section {
     padding: 1em 2.5em; 
     max-width: 1000px;
@@ -125,6 +132,7 @@ hr {
 #opening-blurb > div > p {
     line-height: 1.8rem;
     font-size: 1.4rem;
+    padding: 1em 1em;
     /* font-style: italic; */
 }
 
@@ -142,13 +150,21 @@ hr {
 }
 .output-box {
     background-color:  rgb(200, 223, 253);
-    padding: 1rem;
+    padding: 0.5rem 1rem 0.5rem 1rem;
     border-radius: 0.5rem;
     box-shadow: .1rem .1rem .2rem rgb(160, 160, 160);
 }
 .output-title {
     margin-top: 0;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
+}
+.output-subtitle {
+    display: block;
+    padding-top: 0.5rem;
+}
+#graph-subtitle-link {
+    text-decoration: none;
+    margin-top: 10px;
 }
 #right-column {
     grid-row: span 2;
@@ -159,6 +175,15 @@ hr {
     gap: 1.5rem;
     width: auto;
 }
+@media (max-width: 80rem) {
+    #right-column {
+        grid-column: 1;
+    }
+    .output-box {
+        margin: auto;
+    }
+}
+
 #written-lake-effects-output > ul > li {
     margin: 0.5rem 0rem 0.5rem 0rem;
 }

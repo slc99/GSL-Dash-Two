@@ -5,15 +5,13 @@ Change all code tagged with 'changeme12' before pushing to server
 from dash import Dash, dcc, html, dash_table
 from dash.dependencies import Input, Output, State
 import pandas as pd
-import csv
-import dataretrieval.nwis as nwis
-from datetime import date
 import numpy as np
-from dateutil.relativedelta import relativedelta
 import plotly.express as px
-from dash_extensions import BeforeAfter
 import plotly.graph_objects as go
+from dateutil.relativedelta import relativedelta
+from datetime import date
 import pickle
+import csv
 
 class DataSchema:
     streamflow_after_consumption = 'streamflow_after_consumption'
@@ -41,7 +39,8 @@ class Policy:
 
     def __init__(self, title: str, description: str, affected: str, 
         affect_type: str, delta: float, initial_cost = 0, cost_per_year = 0, 
-        slider = '', slider_message = '', selected_cost = 0):
+        slider = '', slider_message = '', selected_cost = 0, slider_mont_prop='',
+        source_link=''):
 
         self.title = title
         self.description = description
@@ -52,15 +51,23 @@ class Policy:
         self.cost_per_year = cost_per_year
         self.slider = slider
         self.slider_message = slider_message
-        if self.initial_cost > 0 and self.cost_per_year > 0:
-            # change this to implement sliders where there is an initial and yearly cost. 
-            # may need a callback from the years forward slider
-            pass
+        self.slider_mont_prop = slider_mont_prop
+        self.source_link = source_link
+
         if cost_per_year > 0:
             self.max_to_invest = cost_per_year
         else:
             self.max_to_invest = initial_cost
-        self.checklist_label = html.Span(children=[html.Strong(self.title),html.Br(),self.description], className='policy-label-span')
+
+        self.checklist_label = html.Span(
+            children=[
+                html.Strong(self.title),
+                html.Br(),
+                self.description,
+                html.A(' Source',href=self.source_link,className='source-links-a',target='_blank'),
+            ], 
+            className='policy-label-span'
+        )
         self.id_name = title.replace(' ','-').lower()
         self.selected_cost = selected_cost
 
@@ -89,22 +96,36 @@ class Policy:
         )
     
     def create_slider_component(self):
+        if self.slider_mont_prop == 'mont':
+            marks = {
+                0: '$0', 
+                int(self.max_to_invest/2): Effect.format_cost_to_print(self.max_to_invest/2), 
+                int(self.max_to_invest): {'label':Effect.format_cost_to_print(self.max_to_invest), 'style':{'right':'-200px'}}
+            }
+            tooltip = {'placement':'bottom'}
+        else:
+            marks = {
+                0: '0%',
+                int(self.max_to_invest/4): '25%',
+                int(self.max_to_invest/2): '50%', 
+                int(self.max_to_invest * 3 / 4): '75%',
+                int(self.max_to_invest): {'label':'100%', 'style':{'right':'-200px'}}
+            }
+            tooltip = None#{'always_visible':False,'placement':'bottom'}
+
         return html.Span(
             id=self.id_name + '-display',
             children = [
                 html.I(self.slider_message,style={'position':'relative','left': '1em'}),
                 html.Br(),
                 dcc.Slider(
-                id = self.id_name + '-slider',
-                min = 0,
-                max = self.max_to_invest,
-                value = 0,
-                marks = {
-                    0: '$0', 
-                    int(self.max_to_invest/2): Effect.format_cost_to_print(self.max_to_invest/2), 
-                    int(self.max_to_invest): {'label':Effect.format_cost_to_print(self.max_to_invest), 'style':{'right':'-200px'}}
-                },
-                tooltip={'placement':'bottom'}), 
+                    id = self.id_name + '-slider',
+                    min = 0,
+                    max = self.max_to_invest,
+                    value = 0,
+                    marks = marks,
+                    tooltip=tooltip
+                ), 
             ], 
         style={'display': 'none'}
         )   
@@ -125,6 +146,8 @@ class Policy:
                 cost_per_year = float(policy.get('Cost per Year')),
                 slider = bool(policy.get('Slider')),
                 slider_message = policy.get('Slider Message'),
+                slider_mont_prop = policy.get('Monetary or Proportionate'),
+                source_link = policy.get('Source'),
             )
 
 class Effect:
@@ -327,12 +350,12 @@ def CreateGraphBasePickle(prediction: pd.DataFrame, lake: pd.DataFrame):
     )
     base_rolling.to_pickle('data/graph_base.pkl',protocol=4)
 
-def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
+def CreateLineGraph(prediction: pd.DataFrame, units: str, n_clicks: int=1) -> px.scatter:
     '''
     Creates a line graph of the past elevation and predicted elevation.
     '''
     METERS_TO_FEET = 3.28084
-    ideal_water_level_range = [1280, 1282]
+    ideal_water_level_range = [1279.6, 1282.3]
 
     base = pd.read_pickle('data/graph_base.pkl')
     prediction['YYYY_int'] = prediction['YYYY'].astype(int)
@@ -367,18 +390,19 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
     ))
     fig.add_trace(go.Scatter(
         x=future.index,
-        y=future['5_rolling_elevation_prediction'],
-        name='Prediction Based On Selection',
-        line=dict(color='red',dash='dash',width=2),
-        hovertemplate= 'Selected Prediction: %{y:.1f}<extra></extra>',
-    ))
-    fig.add_trace(go.Scatter(
-        x=future.index,
         y=future['rolling_base_prediction'],
         name='Base Elevation Prediction',
         line=dict(color='green',dash='dash',width=2),
         hovertemplate= 'Base Prediction: %{y:.1f}<extra></extra>',
     ))
+    if n_clicks > 0:
+        fig.add_trace(go.Scatter(
+            x=future.index,
+            y=future['5_rolling_elevation_prediction'],
+            name='Prediction Based On Selection',
+            line=dict(color='red',dash='dash',width=2),
+            hovertemplate= 'Selected Prediction: %{y:.1f}<extra></extra>',
+        ))
 
     START_DATE = 1870
     end_date = last_predicted_year
@@ -400,10 +424,7 @@ def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: 
         annotation_position='bottom left'
     )
 
-
-
     return fig
-
 
 def RetrieveImage(elevation: float) -> html.Img:
     ''' Given an a lake elevation, retrieves the matching picture of the lake '''
@@ -694,7 +715,7 @@ def TempToEvap(temperature_delta: float, unit: str) -> Policy:
         delta=(evap_rate)
     )
 
-def ParseMarkedownText(text_file_path: str, mathjax: bool=False) -> dcc.Markdown:
+def ParseMarkdownText(text_file_path: str, mathjax: bool=False) -> dcc.Markdown:
     with open(text_file_path, 'r') as f:
         content = f.read()
     return dcc.Markdown(content, mathjax=mathjax)
@@ -780,45 +801,14 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
             ),
             html.P('''The effect of climate change on precipitation and streamflow is not automatically integrated into the model. However, both can be controlled 
             through the provided sliders.'''),
-            html.Strong('Q: Isn\'t the lake expected to disappear within five years? Why does the model not show this?'),
-            dcc.Markdown('''Despite a rush of [misleading](https://www.cnn.com/2023/01/06/us/great-salt-lake-disappearing-drought-climate/index.html) 
-            [headlines](https://www.washingtonpost.com/climate-environment/2023/01/06/great-salt-lake-utah-drying-up/) to the contrary, the lake 
-            is not expected to disappear in five years. The [official briefing](https://pws.byu.edu/GSL%20report%202023) states that “if this \[the average since 2020\] 
-            rate of water loss continues, the lake would be on track to disappear in the next five years”. This is a statement of the current rate of decline, 
-            not a prediction of the future decline. The lake disappearing in five years would make a bad prediction for two reasons. First, nearly all water that 
-            leaves the lake is through evaporation (the exception being water drained from the lake for mineral extraction). Because of this, the surface area is 
-            directly related to the rate of water loss. As the water level declines, so does surface area. This in turn reduces the amount of water that is lost per 
-            year, stabilizing the lake level at a new, lower level. This is illustrated in the below graph:'''),
-            html.Div(className='writeup-charts',children=[dcc.Graph(figure=evap_elevation_graph)]),
-            html.P('''Second, the sample size of two years is not large enough to base a prediction on. The below graph shows how widely the rate of streamflow varies 
-            year-to-year. With a standard deviation of 1.6km3, a prediction based on two years of data is unreliable.'''),
-            html.Div(
-                className='writeup-charts',
-                children=[
-                    dcc.Graph(figure=streamflow_year_graph),
-                ]
-            ),
-            html.Strong('Q: What is the difference between water consumption and water use?'),
-            html.P('''Throughout this project, I focus on \'consumptive\' water use. Consumptive use is defined by the US Geographical Survey (USGS) as 
-            "the part of water withdrawn that is evaporated, transpired, incorporated into products or crops, consumed by humans or livestock, or otherwise 
-            not available for immediate use". Non-consumptive use of water  is eventually returned back to the water system. In the Great Salt Lake basin, the 
-            lake ultimately receives all non-consumed water. '''),
             html.Strong('Q: Why is the predicted elevation flat?'),
-            html.P('''The model can only predict a long-run average. The model does not have the ability to predict weather cycles. Historically, the lake has 
-            fluctuated along a clear, downward sloping trend, pictured below:'''),
-            html.Div(
-                className='writeup-charts',
-                children=[
-                    dcc.Graph(figure=elevation_trend),
-                    html.I('On average, the Great Salt Lake has trended towards losing 1.6cm (0.6in) every year since 1847')
-                ]
-            ),
-            html.P('''Only considering a long-run average has a few disadvantages. The most important is that it underestimates the risk of ecosystem collapse and 
-            other effects that involve specific thresholds. If the long-run average lake level is slightly above a threshold, then the model will not predict the event 
-            happening.. However, the threshold will be crossed when the lake level decreases due to natural weather variations. To account for this, the predicted costs 
-            are not built based on a threshold system, but rather a linear or quadratic relationship between expected cost and lake level. See below for more detail.'''),
-            html.Strong('Q: Do you have any other cool graphs?'),
-            html.P('''Of course. Here is a Sankey diagram that is helpful to understand the underlying dynamics of the Great Salt Lake. The diagram displays how water 
+            html.P('''The model can only predict a long-run average. The model does not have the ability to predict weather cycles. While the lake’s elevation varies, the lake has historically fluctuated along a clear, downward sloping trend, pictured below.'''),
+            html.Div(className='writeup-charts',children=[dcc.Graph(figure=elevation_trend),html.I('On average, the Great Salt Lake has trended towards losing 1.6cm (0.6in) every year since 1847')]),
+            dcc.Markdown('''I hope to illustrate the effects of different policies by predicting the long-run average. Such effects may be obscured by short-term weather fluctuations, but will have an important impact in the long-run. The effects of only considering the long run average are expanded upon [below](#model-writeup-title).'''),
+            html.Strong('Q: What is the difference between water consumption and water use?'),
+            html.P('''Throughout this project, I focus on ‘consumptive’ water use. Consumptive use is defined by the US Geographical Survey (USGS) as "the part of water withdrawn that is evaporated, transpired, incorporated into products or crops, consumed by humans or livestock, or otherwise not available for immediate use". In contrast, ‘non-consumptive’  water use is any water that is eventually returned to the water system after being used. Many water use metrics lump consumptive and non-consumptive water use together under the shared title ‘water use’. The Great Salt Lake Watershed is a ‘closed basin’, meaning no water flows out. Therefore, all non-consumed water eventually flows into the Great Salt Lake. For this reason, consumptive water use is the important statistic for the purpose of preserving the Great Salt Lake. '''),
+            html.Strong('Q: Do you have any graphs to help understand the dynamics of the lake?'),
+            html.P('''Yes. Here is a Sankey diagram that is helpful to understand the underlying dynamics of the Great Salt Lake. The diagram displays how water 
             enters and leaves the lake during of an average year.'''),
             dcc.Graph(className='writeup-charts',figure=CreateSankeyDiagram()),
             html.P('''Throughout an average year, humans consume 1.85km3 (1.5 million acre-feet) of water in the Great Salt Lake Basin. A breakdown of how that 
@@ -829,7 +819,13 @@ def QAndASection(yearly_lake: pd.DataFrame) -> html.Section:
             formerly known as MagCorp. Municipal consumption includes all water used by households and industrial buildings, including lawn irrigation and data centers. 
             Evaporation from impounded wetlands is the amount of water that evaporates from the surface of wetlands that are artificially maintained through a series of 
             levies near river entrances to the Great Salt Lake. Finally, reservoir evaporation is the water that evaporates from the surface of reservoirs. Because this 
-            chart is based on consumptive water use, it may look different then other water use charts you may have seen.''')
+            chart is based on consumptive water use, it may look different then other water use charts you may have seen.'''),
+            html.Strong('Q: Isn\'t the lake expected to disappear within five years? Why does the model not show this?'),
+            dcc.Markdown('''The lake is not predicted to disappear in five years. This claim originates in the briefing [“Emergency measures needed to rescue Great Salt Lake from ongoing collapse”](https://pws.byu.edu/GSL%20report%202023), which excellently summarizes the current state of the Great Salt Lake and the threats posed by its ongoing decline. The briefing states that if the recent “rate of water loss continues, the lake would be on track to disappear in the next five years”. This is a factual statement about the current rate of decline. It is not, however, a prediction of future decline. The briefing does not claim the lake will disappear in five years, but rather that the average yearly rate of water loss since 2020 is equivalent to one fifth of the lake’s current volume. '''),
+            html.P('''The statement “the lake will disappear in five years” is a bad prediction for two reasons. First, the sample size of two years, 2021 and 2022, is too small to accurately project into the future given the yearly variation in weather. As seen in the below chart, the amount of water that flows into the lake is extremely variable. Taking the average over two years would not provide a reliable prediction for the next five.'''),
+            html.Div(className='writeup-charts',children=[dcc.Graph(figure=streamflow_year_graph),]),
+            html.P('''Second, even if the current rate of streamflow reaching the lake continues for the next five years, the lake will not disappear. To understand why, we must understand the lake’s dynamics. As illustrated in the Sankey diagram above, nearly all the water that leaves the lake evaporates. Because of this, the surface area is directly related to the rate of water loss. As the water level declines, so does surface area. This in turn reduces the amount of water that is lost per year, stabilizing the lake level at a new, lower level. This is illustrated in the below graph.'''),
+            html.Div(className='writeup-charts',children=[dcc.Graph(figure=evap_elevation_graph)]),
         ]
     )
 
@@ -881,7 +877,7 @@ app.layout = html.Div([
         ]
     ),
     html.P(
-        ParseMarkedownText('data/markdown_text/opening_blurb.txt'),
+        ParseMarkdownText('data/markdown_text/opening_blurb.txt'),
         id='opening-blurb', 
         className='center-column-content',
     ),
@@ -911,7 +907,7 @@ app.layout = html.Div([
             html.Div(
                 id='sandbox-sliders',
                 children=[
-                    html.H3('Component Options'),
+                    html.H3('Enviromental Options'),
                     html.Strong('Adjust direct precipitation onto the lake\'s surface'),
                     dcc.Slider(
                         id = 'rain-slider',
@@ -1003,7 +999,15 @@ app.layout = html.Div([
                 ]
             ),
             # changeme12
-            dcc.Dropdown(id='unit-dropdown',options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],value = 'imperial'),
+            html.Div(children=[
+                html.Span('Select Units: '),
+                dcc.Dropdown(
+                    id='unit-dropdown',
+                    options = [{'label':'Metric','value':'metric'},{'label':'Imperial','value':'imperial'},],
+                    value = 'imperial',
+                    style={'max-width':'200px'}
+                ),
+            ]),
             html.Br(),
             html.Button(id='run-model-button', n_clicks=0, children='Run Model'),
             html.H2('Model Output', id='model-output-title'),
@@ -1020,7 +1024,14 @@ app.layout = html.Div([
                 children=[
                     html.H3('Great Salt Lake\'s historic and predicted elevation (five-year rolling average):', className='output-title'),
                     dcc.Loading(dcc.Graph(id='output-graph')),
-                ]
+                    html.I(
+                        className='output-subtitle',
+                        children=[
+                            'The ideal water level is derived from the ',
+                            html.A('state\'s lake management matrix.',href='https://webapps.usgs.gov/gsl/index.html',target='_blank',id='graph-subtitle-link')
+                        ]
+                    )
+                ],
             ),
             html.Div(
                 id='right-column',
@@ -1031,14 +1042,14 @@ app.layout = html.Div([
                         children = [
                             html.H3('Predicted surface area:',className='output-title'),
                             dcc.Loading(html.Div(id='lake-predicted-image')),
-                            html.I('The black line indicates the shoreline of the average natural lake level of 1282m (4207ft).'),
+                            html.I(id='picture-subtitle',className='output-subtitle'),
                         ]
                     ),
                     html.Div(
                         id='new-lake-stats-container',
                         className='output-box',
                         children = [
-                            html.H3('New lake statistics:', className='output-title'),
+                            html.H3('Predicted lake statistics:', className='output-title'),
                             dcc.Loading(html.Div(id='new-lake-stats')),
                         ]
                     ),
@@ -1063,13 +1074,13 @@ app.layout = html.Div([
             QAndASection(full_lake),
             html.H2('Writeup',id='model-writeup-title'),
             html.Hr(),
-            html.Div(ParseMarkedownText('data/markdown_text/writeup.txt',mathjax=True),id='writeup-text'),
+            html.Div(ParseMarkdownText('data/markdown_text/writeup.txt',mathjax=True),id='writeup-text'),
             # a seperate div is required because of the special hanging line indent.
-            html.Div(ParseMarkedownText('data/markdown_text/works-cited.txt'),id='works-cited'), 
+            html.Div(ParseMarkdownText('data/markdown_text/works-cited.txt'),id='works-cited'), 
             html.P('Lake needs more water'),
             html.H2('About Me',id='about-me-title'),
             html.Hr(),
-            ParseMarkedownText('data/markdown_text/about_me.txt'),
+            ParseMarkdownText('data/markdown_text/about_me.txt'),
         ]
     ),
 ])
@@ -1080,12 +1091,15 @@ app.layout = html.Div([
     Output('temperature-slider','max'),
     Output('temperature-slider','marks'),
     Output('temperature-slider','value'),
+    Output('picture-subtitle','children'),
     Input('unit-dropdown','value'),
     State('temperature-slider','value')
 )
 def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
     F_PER_C = 9/5
+
     if unit == 'imperial':
+        picture_subtitle = 'The black line indicates the average natural shoreline of the lake, at 4207ft.'
         min = -9
         max = 9
         marks = {
@@ -1098,6 +1112,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
         }
         value = cur_temp_value * F_PER_C
     else:
+        picture_subtitle = 'The black line indicates the average natural shoreline of the lake, at 1282m.'
         min = -5
         max = 5
         marks = {
@@ -1109,7 +1124,7 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
             5: {'label':'5\u00B0 C warmer', 'style':{'right':'-200px'}}}
         value = cur_temp_value / F_PER_C
     
-    return min, max, marks, value
+    return min, max, marks, value, picture_subtitle
 
 @app.callback(
     Output('output-graph','figure'),
@@ -1135,14 +1150,14 @@ def AdjustDisplayedUnits(unit: str, cur_temp_value: float):
     State(Policy.slider_policies[8].id_name + '-slider','value'),
     # prevent_initial_call=True
 )
-def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, temperature_delta: float,
+def Modeling(n_clicks: int, checklist_policies: list, rain_delta: int, consumption_delta: int, years_forward: int, streamflow_delta: int, temperature_delta: float,
     units: str, slider_0: float, slider_1: float, slider_2: float, slider_3: float, slider_4: float, slider_5: float, slider_6: float, 
     slider_7: float, slider_8: float,) -> list:
 
     # if units == 'imperial':
     #     temperature_delta *= F_PER_C
     # THIS IS A SILLY WORK AROUND TO A WEIRD SLIDER ISSUE. Not sure why I was yelling
-    if _ == 0:
+    if n_clicks == 0:
         if units=='metric':
             temperature_delta = 1.83
         else:
@@ -1197,7 +1212,7 @@ def Modeling(_: int, checklist_policies: list, rain_delta: int, consumption_delt
     # this line should only be run when the model is changed and thus the base predictions change
     # CreateGraphBasePickle(prediction,lake)
 
-    line_graph = CreateLineGraph(prediction, lr_average_elevation, lake, units)
+    line_graph = CreateLineGraph(prediction, units, n_clicks=n_clicks)
     lake_picture = RetrieveImage(lr_average_elevation)
     written_effects = CreateWrittenEffects(lr_average_elevation, applied_policies, bath, units, years_forward)
     new_lake_stats = NewLakeStats(lr_average_elevation, bath, units)
@@ -1309,5 +1324,5 @@ def DisplayWaterBuyback(selected):
 
 
 if __name__ == '__main__':
-    #changeme12
+    # changeme12
     app.run_server(debug=False)
