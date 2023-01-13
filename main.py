@@ -325,7 +325,7 @@ def CreateGraphBasePickle(prediction: pd.DataFrame, lake: pd.DataFrame):
         },
         inplace=True
     )
-    base_rolling.to_pickle('data/graph_base.pkl')
+    base_rolling.to_pickle('data/graph_base.pkl',protocol=4)
 
 def CreateLineGraph(prediction: pd.DataFrame, lr_average_elevaton: float, lake: pd.DataFrame, units: str, rolling=5) -> px.scatter:
     '''
