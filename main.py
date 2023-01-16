@@ -569,9 +569,9 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
 
     #now to create the list of written effects
     if change_in_sa > 0:
-        words = ['less', 'a decrease','increase']
+        words = ['less', 'a decrease','decrease']
     else:
-        words = ['more','an increase','decrease']
+        words = ['more','an increase','increase']
 
     written_number ={
         20: 'twenty',
@@ -601,7 +601,7 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
         summary_words = ['selected policies', 'effects of the lake\'s elevation']
 
     summary_sentence = html.Li(children=[
-        html.Strong(f'''Overall, the {summary_words[0]} will cost ${FormatNumberToPrint(abs(policy_cost_minus_lake_costs))} more then the cost of the {summary_words[1]}
+        html.Strong(f'''Overall, the {summary_words[0]} will cost ${FormatNumberToPrint(abs(policy_cost_minus_lake_costs))} more then the cost of the {summary_words[1]} 
         over the next {written_number[years_forward]} years. '''),
         'This ignores all non-monetary effects. See below for further discussion.'
     ])
@@ -611,9 +611,9 @@ def CreateWrittenEffects(lr_elevation: float, applied_policies: pd.DataFrame, ba
         f'over the next {written_number[years_forward]} years, equivalent to ${FormatNumberToPrint(yearly_lake_level_cost)} yearly.',
     ])
     written_policy_effects = html.Li(children=[
-        f'The selected policies will {words[2]} water going into the lake by {total_water_savings:.2f} {volume_unit} per year and cost ',
+        f'The selected policies will {words[2]} water going into the lake by {FormatNumberToPrint(total_water_savings)} {volume_unit} per year and cost ',
         html.Strong(f'${FormatNumberToPrint(total_policy_cost)}'),
-        f'over then next {written_number[years_forward]} years.'
+        f' over then next {written_number[years_forward]} years.'
     ])
     surface_area_effect = html.Li(children=[
         html.Strong(f'{FormatNumberToPrint(abs(change_in_sa))} {area_unit_words} of lakebed will be exposed'),
