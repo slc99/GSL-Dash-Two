@@ -294,8 +294,10 @@ def GSLPredictor(years_forward: int, yearly_stats: dict,
     '''
     
     MAX_VOLUME = 39.896064
-        
-    cur_date = pd.to_datetime(date.today().strftime("%Y"))
+
+    # Quick update 11/18/24 -- replacing cur_date to 2023 as model is broken
+    # cur_date = pd.to_datetime(date.today().strftime("%Y"))
+    cur_date = pd.to_datetime("2023", format="%Y")
     start_year = int(str(cur_date).split('-')[0])
     
     elevation = round(lake_df.at[start_year,DataSchema.avg_elevation], 2)
